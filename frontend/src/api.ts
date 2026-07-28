@@ -71,8 +71,10 @@ export const api = {
       farm?: any;
     }>("/auth/verify-otp", { method: "POST", body: payload, auth: false }),
   me: () => request<{ farm: any }>("/farm/me"),
+  updateSettings: (payload: { upi_id?: string; farm_name?: string }) =>
+    request<{ farm: any }>("/farm/settings", { method: "PUT", body: payload }),
 
-  todayMilk: () => request<{ log: any }>("/milk/today"),
+  todayMilk: () => request<{ log: any; expected: any }>("/milk/today"),
   logMilk: (payload: any) => request<{ log: any }>("/milk/log", { method: "POST", body: payload }),
   milkLogs: (month?: string) =>
     request<{ logs: any[] }>(`/milk/logs${month ? `?month=${month}` : ""}`),
@@ -81,10 +83,10 @@ export const api = {
   createProduct: (payload: any) => request("/products", { method: "POST", body: payload }),
   adjustStock: (id: string, delta: number, note = "") =>
     request(`/products/${id}/stock`, { method: "PATCH", body: { delta, note } }),
-  sellProduct: (id: string, qty: number, price?: number) =>
+  sellProduct: (id: string, qty: number, price?: number, contact_id?: string) =>
     request(`/products/${id}/sale`, {
       method: "POST",
-      body: { qty, price_per_unit: price },
+      body: { qty, price_per_unit: price, contact_id },
     }),
   deleteProduct: (id: string) => request(`/products/${id}`, { method: "DELETE" }),
 
@@ -92,9 +94,22 @@ export const api = {
     request<any>(`/analytics/monthly${month ? `?month=${month}` : ""}`),
 
   contacts: () => request<{ contacts: any[] }>("/contacts"),
-  addContact: (payload: { name: string; mobile: string }) =>
+  addContact: (payload: { name: string; mobile: string; daily_requirement_ltr?: number; rate_per_ltr?: number }) =>
     request("/contacts", { method: "POST", body: payload }),
+  updateContact: (id: string, payload: any) =>
+    request(`/contacts/${id}`, { method: "PUT", body: payload }),
   deleteContact: (id: string) => request(`/contacts/${id}`, { method: "DELETE" }),
+  
+  addSkip: (id: string, date: string, qty_skipped: number) =>
+    request(`/contacts/${id}/skips`, { method: "POST", body: { date, qty_skipped } }),
+  getSkips: (id: string, month: string) => request<{ skips: any[] }>(`/contacts/${id}/skips?month=${month}`),
+  generateBill: (id: string, month: string) => request<any>(`/contacts/${id}/bill?month=${month}`),
+
+  cows: () => request<{ cows: any[] }>("/cows"),
+  addCow: (payload: { tag: string; breed?: string; status?: string }) => request("/cows", { method: "POST", body: payload }),
+  updateCowStatus: (id: string, status: string) => request(`/cows/${id}/status`, { method: "PATCH", body: { status } }),
+  addCowEvent: (id: string, payload: { type: string; date: string; notes: string }) => request(`/cows/${id}/events`, { method: "POST", body: payload }),
+  cowEvents: (id: string) => request<{ events: any[] }>(`/cows/${id}/events`),
 
   sendBroadcast: (message: string, contact_ids: string[]) =>
     request<{ broadcast: any }>("/broadcast", {

@@ -1,16 +1,17 @@
 import { useCallback, useState } from "react";
 import { View, Text, StyleSheet, TextInput, FlatList, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { api } from "@/src/api";
 import { colors, spacing, radius, shadow } from "@/src/theme";
 
-type Contact = { id: string; name: string; mobile: string };
+type Contact = { id: string; name: string; mobile: string; daily_requirement_ltr?: number; rate_per_ltr?: number };
 
-export default function Broadcast() {
+export default function Customers() {
+  const router = useRouter();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState("");
@@ -18,6 +19,8 @@ export default function Broadcast() {
   const [sending, setSending] = useState(false);
   const [newContactName, setNewContactName] = useState("");
   const [newContactMobile, setNewContactMobile] = useState("");
+  const [newContactReq, setNewContactReq] = useState("");
+  const [newContactRate, setNewContactRate] = useState("");
   const [isAddingContact, setIsAddingContact] = useState(false);
 
   const loadContacts = useCallback(async () => {
@@ -81,9 +84,16 @@ export default function Broadcast() {
       return;
     }
     try {
-      await api.addContact({ name: newContactName, mobile: newContactMobile });
+      await api.addContact({
+        name: newContactName,
+        mobile: newContactMobile,
+        daily_requirement_ltr: newContactReq ? parseFloat(newContactReq) : undefined,
+        rate_per_ltr: newContactRate ? parseFloat(newContactRate) : undefined,
+      });
       setNewContactName("");
       setNewContactMobile("");
+      setNewContactReq("");
+      setNewContactRate("");
       setIsAddingContact(false);
       loadContacts();
     } catch (e: any) {
@@ -95,8 +105,8 @@ export default function Broadcast() {
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.surface }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <SafeAreaView edges={["top"]} style={styles.header}>
         <View>
-          <Text style={styles.title}>Broadcast</Text>
-          <Text style={styles.sub}>Send WhatsApp messages</Text>
+          <Text style={styles.title}>Customers</Text>
+          <Text style={styles.sub}>Manage and Broadcast</Text>
         </View>
         <Pressable style={styles.addBtn} onPress={() => setIsAddingContact(!isAddingContact)}>
           <MaterialCommunityIcons name={isAddingContact ? "close" : "account-plus"} size={20} color={colors.onBrandPrimary} />
@@ -121,6 +131,24 @@ export default function Broadcast() {
             keyboardType="phone-pad"
             style={styles.input}
           />
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <TextInput
+              placeholder="Daily Req (L)"
+              placeholderTextColor={colors.muted}
+              value={newContactReq}
+              onChangeText={setNewContactReq}
+              keyboardType="numeric"
+              style={[styles.input, { flex: 1 }]}
+            />
+            <TextInput
+              placeholder="Rate (₹/L)"
+              placeholderTextColor={colors.muted}
+              value={newContactRate}
+              onChangeText={setNewContactRate}
+              keyboardType="numeric"
+              style={[styles.input, { flex: 1 }]}
+            />
+          </View>
           <Pressable style={styles.addContactSubmit} onPress={handleAddContact}>
             <Text style={styles.addContactSubmitText}>Save Contact</Text>
           </Pressable>
@@ -155,16 +183,26 @@ export default function Broadcast() {
           renderItem={({ item }) => {
             const isSelected = selected.has(item.id);
             return (
-              <Pressable style={[styles.contactRow, isSelected && styles.contactRowSelected]} onPress={() => toggleSelect(item.id)}>
-                <MaterialCommunityIcons
-                  name={isSelected ? "check-circle" : "circle-outline"}
-                  size={24}
-                  color={isSelected ? colors.brandPrimary : colors.muted}
-                />
+              <Pressable 
+                style={[styles.contactRow, isSelected && styles.contactRowSelected]} 
+                onPress={() => router.push(`/customer/${item.id}`)}
+              >
+                <Pressable onPress={() => toggleSelect(item.id)} style={{ padding: spacing.xs, marginLeft: -spacing.xs }}>
+                  <MaterialCommunityIcons
+                    name={isSelected ? "check-circle" : "circle-outline"}
+                    size={24}
+                    color={isSelected ? colors.brandPrimary : colors.muted}
+                  />
+                </Pressable>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.contactName}>{item.name}</Text>
                   <Text style={styles.contactMobile}>{item.mobile}</Text>
                 </View>
+                {!!item.daily_requirement_ltr && (
+                  <View style={styles.reqBadge}>
+                    <Text style={styles.reqBadgeText}>{item.daily_requirement_ltr}L daily</Text>
+                  </View>
+                )}
               </Pressable>
             );
           }}
@@ -285,6 +323,15 @@ const styles = StyleSheet.create({
   },
   contactName: { fontSize: 15, fontWeight: "600", color: colors.onSurface },
   contactMobile: { fontSize: 13, color: colors.muted, marginTop: 2 },
+  reqBadge: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  reqBadgeText: { fontSize: 12, fontWeight: "600", color: colors.brandPrimary },
   empty: { padding: spacing.xl, alignItems: "center" },
   emptyText: { color: colors.muted, fontSize: 14, textAlign: "center" },
   footer: {

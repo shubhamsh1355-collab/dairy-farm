@@ -47,11 +47,20 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="broadcast"
+        name="customers"
         options={{
-          title: "Broadcast",
+          title: "Customers",
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="whatsapp" size={size} color={color} />
+            <MaterialCommunityIcons name="account-group" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="herd"
+        options={{
+          title: "Herd",
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="cow" size={size} color={color} />
           ),
         }}
       />

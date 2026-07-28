@@ -74,7 +74,6 @@ class MilkLogIn(BaseModel):
     price_per_ltr: float = 60
     notes: Optional[str] = ""
 
-
 class ProductIn(BaseModel):
     name: str
     unit: str = "kg"
@@ -82,21 +81,38 @@ class ProductIn(BaseModel):
     price_per_unit: float = 0
     stock: float = 0
 
-
 class ProductStockIn(BaseModel):
     delta: float  # +add, -remove (production/consumption)
     note: Optional[str] = ""
 
-
 class ProductSaleIn(BaseModel):
     qty: float
     price_per_unit: Optional[float] = None
-
+    contact_id: Optional[str] = None
 
 class ContactIn(BaseModel):
     name: str
     mobile: str  # e.g. +91XXXXXXXXXX
+    daily_requirement_ltr: float = 0
+    rate_per_ltr: float = 60
 
+class MilkSkipIn(BaseModel):
+    date: str  # YYYY-MM-DD
+    qty_skipped: float
+
+class CowIn(BaseModel):
+    tag: str
+    breed: Optional[str] = ""
+    status: str = "Healthy"
+
+class CowEventIn(BaseModel):
+    type: str
+    date: str
+    notes: str
+
+class FarmSettingsIn(BaseModel):
+    upi_id: Optional[str] = None
+    farm_name: Optional[str] = None
 
 class BroadcastIn(BaseModel):
     message: str
@@ -230,10 +246,23 @@ async def upsert_milk_log(body: MilkLogIn, farm=Depends(get_farm)):
     return {"log": doc}
 
 
+async def get_expected_delivery(farm_id: str, date: str) -> dict:
+    contacts = await db.contacts.find({"farm_id": farm_id}, {"_id": 0}).to_list(500)
+    total_req = sum(float(c.get("daily_requirement_ltr", 0)) for c in contacts)
+    skips = await db.milk_skips.find({"farm_id": farm_id, "date": date}, {"_id": 0}).to_list(500)
+    total_skipped = sum(s.get("qty_skipped", 0) for s in skips)
+    return {
+        "total_req": total_req,
+        "total_skipped": total_skipped,
+        "expected_delivered": max(0.0, total_req - total_skipped)
+    }
+
 @api.get("/milk/today")
 async def milk_today(farm=Depends(get_farm)):
-    log = await db.milk_logs.find_one({"farm_id": farm["id"], "date": today_key()}, {"_id": 0})
-    return {"log": log}
+    date = today_key()
+    log = await db.milk_logs.find_one({"farm_id": farm["id"], "date": date}, {"_id": 0})
+    expected = await get_expected_delivery(farm["id"], date)
+    return {"log": log, "expected": expected}
 
 
 @api.get("/milk/logs")
@@ -314,6 +343,7 @@ async def sell_product(pid: str, body: ProductSaleIn, farm=Depends(get_farm)):
         "qty": body.qty,
         "price_per_unit": price,
         "amount": amount,
+        "contact_id": body.contact_id,
         "date": today_key(),
         "month": month_key(),
         "created_at": iso(now_utc()),
@@ -401,6 +431,8 @@ async def add_contact(body: ContactIn, farm=Depends(get_farm)):
         "farm_id": farm["id"],
         "name": body.name.strip(),
         "mobile": body.mobile.strip(),
+        "daily_requirement_ltr": body.daily_requirement_ltr,
+        "rate_per_ltr": body.rate_per_ltr,
         "created_at": iso(now_utc()),
     }
     await db.contacts.insert_one(dict(doc))
@@ -470,6 +502,150 @@ async def send_broadcast(body: BroadcastIn, farm=Depends(get_farm)):
 async def broadcasts(farm=Depends(get_farm)):
     items = await db.broadcasts.find({"farm_id": farm["id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return {"broadcasts": items}
+
+
+import calendar
+
+@api.put("/farm/settings")
+async def update_farm_settings(body: FarmSettingsIn, farm=Depends(get_farm)):
+    updates = {}
+    if body.upi_id is not None:
+        updates["upi_id"] = body.upi_id.strip()
+    if body.farm_name is not None:
+        updates["farm_name"] = body.farm_name.strip()
+    if updates:
+        await db.farms.update_one({"id": farm["id"]}, {"$set": updates})
+        farm.update(updates)
+    return {"farm": farm}
+
+@api.put("/contacts/{cid}")
+async def update_contact(cid: str, body: ContactIn, farm=Depends(get_farm)):
+    updates = {
+        "name": body.name.strip(),
+        "mobile": body.mobile.strip(),
+        "daily_requirement_ltr": body.daily_requirement_ltr,
+        "rate_per_ltr": body.rate_per_ltr,
+    }
+    res = await db.contacts.update_one({"id": cid, "farm_id": farm["id"]}, {"$set": updates})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Contact not found")
+    return {"contact": updates}
+
+@api.post("/contacts/{cid}/skips")
+async def add_skip(cid: str, body: MilkSkipIn, farm=Depends(get_farm)):
+    doc = {
+        "id": str(uuid.uuid4()),
+        "farm_id": farm["id"],
+        "contact_id": cid,
+        "date": body.date,
+        "month": body.date[:7],
+        "qty_skipped": body.qty_skipped,
+        "created_at": iso(now_utc()),
+    }
+    await db.milk_skips.insert_one(dict(doc))
+    return {"skip": doc}
+
+@api.get("/contacts/{cid}/skips")
+async def get_skips(cid: str, month: str, farm=Depends(get_farm)):
+    items = await db.milk_skips.find({"farm_id": farm["id"], "contact_id": cid, "month": month}, {"_id": 0}).to_list(100)
+    return {"skips": items}
+
+@api.get("/contacts/{cid}/bill")
+async def generate_bill(cid: str, month: str, farm=Depends(get_farm)):
+    contact = await db.contacts.find_one({"farm_id": farm["id"], "id": cid}, {"_id": 0})
+    if not contact:
+        raise HTTPException(404, "Customer not found")
+        
+    y, m = map(int, month.split('-'))
+    today = now_utc()
+    if today.year == y and today.month == m:
+        days = today.day
+    else:
+        days = calendar.monthrange(y, m)[1]
+        
+    daily_req = float(contact.get("daily_requirement_ltr", 0))
+    rate = float(contact.get("rate_per_ltr", 60))
+    
+    expected_ltr = days * daily_req
+    
+    skips = await db.milk_skips.find({"farm_id": farm["id"], "contact_id": cid, "month": month}, {"_id": 0}).to_list(100)
+    total_skipped = sum(s["qty_skipped"] for s in skips)
+    
+    delivered_ltr = max(0.0, expected_ltr - total_skipped)
+    milk_amount = delivered_ltr * rate
+    
+    txs = await db.product_tx.find({"farm_id": farm["id"], "contact_id": cid, "month": month, "type": "sale"}, {"_id": 0}).to_list(100)
+    product_amount = sum(t["amount"] for t in txs)
+    
+    total_amount = milk_amount + product_amount
+    
+    return {
+        "month": month,
+        "contact": contact,
+        "days_calculated": days,
+        "expected_ltr": expected_ltr,
+        "total_skipped_ltr": total_skipped,
+        "delivered_ltr": delivered_ltr,
+        "milk_amount": milk_amount,
+        "products": txs,
+        "product_amount": product_amount,
+        "total_amount": total_amount,
+        "farm_upi_id": farm.get("upi_id")
+    }
+
+@api.get("/cows")
+async def list_cows(farm=Depends(get_farm)):
+    items = await db.cows.find({"farm_id": farm["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {"cows": items}
+
+@api.post("/cows")
+async def add_cow(body: CowIn, farm=Depends(get_farm)):
+    doc = {
+        "id": str(uuid.uuid4()),
+        "farm_id": farm["id"],
+        "tag": body.tag.strip(),
+        "breed": body.breed.strip(),
+        "status": body.status,
+        "created_at": iso(now_utc()),
+    }
+    await db.cows.insert_one(dict(doc))
+    return {"cow": doc}
+
+@api.patch("/cows/{cid}/status")
+async def update_cow_status(cid: str, body: dict, farm=Depends(get_farm)):
+    status = body.get("status")
+    await db.cows.update_one({"id": cid, "farm_id": farm["id"]}, {"$set": {"status": status}})
+    
+    event = {
+        "id": str(uuid.uuid4()),
+        "farm_id": farm["id"],
+        "cow_id": cid,
+        "type": "Status Change",
+        "date": today_key(),
+        "notes": f"Status updated to {status}",
+        "created_at": iso(now_utc()),
+    }
+    await db.cow_events.insert_one(dict(event))
+    return {"status": "ok"}
+
+@api.post("/cows/{cid}/events")
+async def add_cow_event(cid: str, body: CowEventIn, farm=Depends(get_farm)):
+    event = {
+        "id": str(uuid.uuid4()),
+        "farm_id": farm["id"],
+        "cow_id": cid,
+        "type": body.type,
+        "date": body.date,
+        "notes": body.notes,
+        "created_at": iso(now_utc()),
+    }
+    await db.cow_events.insert_one(dict(event))
+    return {"event": event}
+
+@api.get("/cows/{cid}/events")
+async def get_cow_events(cid: str, farm=Depends(get_farm)):
+    items = await db.cow_events.find({"farm_id": farm["id"], "cow_id": cid}, {"_id": 0}).sort("date", -1).to_list(500)
+    return {"events": items}
 
 
 # ---------- mount ----------

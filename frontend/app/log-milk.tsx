@@ -17,16 +17,22 @@ export default function LogMilk() {
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [expectedData, setExpectedData] = useState<any>(null);
 
   useEffect(() => {
     (async () => {
       const r = await api.todayMilk().catch(() => null);
+      if (r?.expected) {
+        setExpectedData(r.expected);
+      }
       if (r?.log) {
         setProduced(String(r.log.produced_ltr));
         setDelivered(String(r.log.delivered_ltr));
         setUsed(String(r.log.used_for_products_ltr));
         setPrice(String(r.log.price_per_ltr));
         setNotes(r.log.notes || "");
+      } else if (r?.expected) {
+        setDelivered(String(r.expected.expected_delivered));
       }
     })();
   }, []);
@@ -69,6 +75,17 @@ export default function LogMilk() {
               <TextInput testID="input-date" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.muted} style={styles.inputFlex} />
             </View>
           </View>
+
+          {expectedData && (
+            <View style={styles.expectedCard}>
+              <MaterialCommunityIcons name="information" size={16} color={colors.brandPrimary} />
+              <Text style={styles.expectedText}>
+                Customer Requirement: {expectedData.total_req}L{"\n"}
+                Skips Logged: {expectedData.total_skipped}L{"\n"}
+                <Text style={{fontWeight:"700"}}>Expected Delivery: {expectedData.expected_delivered}L</Text>
+              </Text>
+            </View>
+          )}
 
           <Field testID="input-produced" icon="cup-water" label="Produced (Litres)" value={produced} onChange={setProduced} />
           <Field testID="input-delivered" icon="truck-delivery" label="Delivered (Litres)" value={delivered} onChange={setDelivered} />
@@ -124,4 +141,6 @@ const styles = StyleSheet.create({
   cta: { marginTop: spacing.md, height: 52, borderRadius: radius.md, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center" },
   ctaText: { color: colors.onBrandPrimary, fontSize: 16, fontWeight: "600" },
   err: { color: colors.error, fontSize: 13 },
+  expectedCard: { flexDirection: "row", backgroundColor: "rgba(39, 92, 59, 0.1)", padding: spacing.md, borderRadius: radius.md, gap: spacing.sm, alignItems: "flex-start" },
+  expectedText: { color: colors.brandPrimary, fontSize: 13, lineHeight: 20 },
 });

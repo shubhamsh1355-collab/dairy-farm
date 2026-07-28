@@ -1,20 +1,43 @@
 import { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { clearSession, loadFarm } from "@/src/api";
+import { clearSession, loadFarm, saveSession, api } from "@/src/api";
 import { colors, spacing, radius } from "@/src/theme";
 import { Logo } from "@/src/Logo";
 
 export default function Profile() {
   const router = useRouter();
   const [farm, setFarm] = useState<any>(null);
-  useEffect(() => { loadFarm().then(setFarm); }, []);
+  const [upiId, setUpiId] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { 
+    loadFarm().then(f => {
+      setFarm(f);
+      if(f?.upi_id) setUpiId(f.upi_id);
+    }); 
+  }, []);
 
   const logout = async () => {
     await clearSession();
     router.replace("/auth");
+  };
+
+  const handleSaveUpi = async () => {
+    try {
+      setSaving(true);
+      const res = await api.updateSettings({ upi_id: upiId });
+      setFarm(res.farm);
+      const token = await (await import("@react-native-async-storage/async-storage")).default.getItem("kd_token");
+      if(token) await saveSession(token, res.farm);
+      alert("Settings saved!");
+    } catch(e: any) {
+      alert(e.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -30,6 +53,22 @@ export default function Profile() {
           <Text style={styles.farmName} testID="profile-farm-name">{farm?.farm_name || "—"}</Text>
           <Text style={styles.muted}>{farm?.owner_name}</Text>
           <Text style={styles.muted}>{farm?.mobile}</Text>
+        </View>
+        
+        <View style={styles.card}>
+          <Text style={styles.section}>Payment Integration</Text>
+          <Text style={styles.muted}>Set your UPI ID to automatically generate QR codes for customer bills.</Text>
+          <TextInput 
+            style={styles.input} 
+            placeholder="e.g. yourname@upi" 
+            placeholderTextColor={colors.muted}
+            value={upiId}
+            onChangeText={setUpiId}
+            autoCapitalize="none"
+          />
+          <Pressable style={styles.btn} onPress={handleSaveUpi} disabled={saving}>
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Save Settings</Text>}
+          </Pressable>
         </View>
 
         <View style={styles.card}>
@@ -57,4 +96,7 @@ const styles = StyleSheet.create({
   mono: { fontFamily: "monospace", fontSize: 11, color: colors.onSurfaceTertiary, backgroundColor: colors.surfaceTertiary, padding: spacing.md, borderRadius: radius.sm, alignSelf: "stretch" },
   logout: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, height: 52, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.error },
   logoutText: { color: colors.error, fontWeight: "600" },
+  input: { alignSelf: "stretch", height: 48, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, paddingHorizontal: spacing.md, color: colors.onSurface, marginTop: spacing.sm },
+  btn: { alignSelf: "stretch", height: 48, backgroundColor: colors.brandPrimary, borderRadius: radius.md, justifyContent: "center", alignItems: "center", marginTop: spacing.sm },
+  btnText: { color: "#fff", fontWeight: "600" }
 });
