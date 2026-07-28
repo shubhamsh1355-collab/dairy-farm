@@ -1,0 +1,207 @@
+{
+  "app_name": "Ksheer Dhara",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A premium, trustworthy SaaS tool that balances crisp data density with the earthy, warm nature of dairy farming.",
+  "color": {
+    "surface": "#FAF9F6",
+    "onSurface": "#1C1B1A",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1C1B1A",
+    "surfaceTertiary": "#F0EBE1",
+    "onSurfaceTertiary": "#4A4743",
+    "surfaceInverse": "#24221F",
+    "onSurfaceInverse": "#FAF9F6",
+    "brand": "#275C3B",
+    "brandPrimary": "#275C3B",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#B55A30",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#E2EBE5",
+    "onBrandTertiary": "#193D27",
+    "success": "#2E6B3B",
+    "onSuccess": "#FFFFFF",
+    "warning": "#D98F2B",
+    "onWarning": "#FFFFFF",
+    "error": "#BA3B3B",
+    "onError": "#FFFFFF",
+    "info": "#2B6B8A",
+    "onInfo": "#FFFFFF",
+    "border": "#E6E2D8",
+    "borderStrong": "#CFC9BC",
+    "divider": "#E6E2D8"
+  },
+  "color_dark": {
+    "surface": "#141311",
+    "onSurface": "#EAE8E3",
+    "surfaceSecondary": "#1F1E1B",
+    "onSurfaceSecondary": "#EAE8E3",
+    "surfaceTertiary": "#2B2A26",
+    "onSurfaceTertiary": "#B8B5AE",
+    "surfaceInverse": "#FAF9F6",
+    "onSurfaceInverse": "#141311",
+    "brand": "#4DA86C",
+    "brandPrimary": "#4DA86C",
+    "onBrandPrimary": "#0A2414",
+    "brandSecondary": "#D17A52",
+    "onBrandSecondary": "#3B1605",
+    "brandTertiary": "#203B2A",
+    "onBrandTertiary": "#A5D6B6",
+    "success": "#4DA86C",
+    "warning": "#EDB35C",
+    "error": "#E86464",
+    "info": "#4B9CBF",
+    "border": "#383632",
+    "borderStrong": "#524F49",
+    "divider": "#2B2A26"
+  },
+  "typography": {
+    "displayFontFamily": "Plus Jakarta Sans",
+    "textFontFamily": "Plus Jakarta Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous padding around content. Clear grouping of elements. Avoid dense dashboards by relying on scrolling and whitespace.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "MaterialCommunityIcons",
+  "glassmorphism": {
+    "enabled": "true",
+    "do's": [
+      "Bottom tab bar background",
+      "Sticky headers over scrolling content",
+      "Floating Action Buttons overlaying lists",
+      "Featured daily milk card background over faint farm imagery"
+    ],
+    "dont's": [
+      "Form inputs",
+      "Body text regions",
+      "Every single card in a long scrolling list"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Splash",
+      "purpose": "Launch screen conveying trust and earthiness.",
+      "states": {
+        "loading": "Full-bleed 'hero_farm' image with a top-to-bottom dark gradient scrim. Centered logo and app name.",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Full-screen flex container. Use expo-linear-gradient as a scrim over the background image to ensure the logo and text are readable."
+    },
+    {
+      "name": "Auth",
+      "purpose": "OTP-based login and Farm Registration.",
+      "states": {
+        "loading": "Spinner on the CTA button.",
+        "empty": "Standard entry state.",
+        "error": "Inline error text below the mobile number input."
+      },
+      "layout": "Use a bottom-sheet-like layout anchored to the bottom. The top half is the 'hero_farm' image blurred. The bottom half is a solid surface card containing the phone number input and 'Send OTP' button."
+    },
+    {
+      "name": "Home",
+      "purpose": "Dashboard displaying daily milk metrics and quick logging actions.",
+      "states": {
+        "loading": "Skeleton loaders for the Today's Overview cards.",
+        "empty": "Illustration ('milk_splash') encouraging the user to log today's first batch.",
+        "error": "Error banner with a 'Retry' button to fetch metrics."
+      },
+      "layout": "Header with Farm Name and Profile icon. Top section: A large 'Hero Card' (glassmorphism over a subtle farm background) displaying 'Today\\'s Milk Overview': Produced, Delivered, Remaining, and Used. Below: A horizontally scrolling list of quick actions. A sticky Floating Action Button (FAB) at the bottom right for 'Log Milk'."
+    },
+    {
+      "name": "Products",
+      "purpose": "Manage dairy product inventory (Ghee, Butter, Paneer, Curd, etc.).",
+      "states": {
+        "loading": "Grid of skeleton cards.",
+        "empty": "Empty state illustration with text 'No products added yet'.",
+        "error": "Center aligned error message."
+      },
+      "layout": "2-column grid layout with 'space-between' and 'md' gap. Each card shows an icon inside a brandTertiary container, the product name, current stock amount, and a subtle '+' button to add stock."
+    },
+    {
+      "name": "Analytics",
+      "purpose": "Monthly review of revenue and net profit.",
+      "states": {
+        "loading": "Skeleton placeholders for charts.",
+        "empty": "Message stating 'Not enough data to display analytics yet'.",
+        "error": "Retry button."
+      },
+      "layout": "Sticky header with a Segmented Control to toggle between 'Milk' and 'Dairy Products'. Below: Oversized typography for Total Revenue and Net Profit (incorporating the iOS-Native Clean rhythm). Simple line/bar chart using a clean charting library. Vertically scrollable."
+    },
+    {
+      "name": "Broadcast",
+      "purpose": "Compose and send bulk WhatsApp messages to customers.",
+      "states": {
+        "loading": "Loading contacts.",
+        "empty": "No contacts found.",
+        "error": "Failed to load contacts."
+      },
+      "layout": "Top section: A text area for the message body. Middle section: A searchable list of customers with checkboxes to select recipients. Bottom: A sticky CTA 'Send via WhatsApp' anchored above the safe area."
+    }
+  ],
+  "images": {
+    "hero_farm": {
+      "url": "https://images.pexels.com/photos/34153986/pexels-photo-34153986.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Serene brown cow in a green pasture, representing the dairy farm."
+    },
+    "milk_splash": {
+      "url": "https://images.pexels.com/photos/7429050/pexels-photo-7429050.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Elegant splash of fresh milk in a clear glass."
+    },
+    "farm_sunset": {
+      "url": "https://images.unsplash.com/photo-1567510534272-07e0f621b6d3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNTl8MHwxfHNlYXJjaHwxfHxkYWlyeSUyMGZhcm0lMjBzdW5zZXQlMjBsYW5kc2NhcGV8ZW58MHx8fHwxNzg0NjMzNTc1fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Dairy farm at sunset."
+    }
+  },
+  "instructions_to_main_agent": [
+    "Design a custom SVG-like logo using @expo/vector-icons. Combine '<MaterialCommunityIcons name=\"cow\" />' with a subtle leaf or water drop to create a farm/dairy mark. DO NOT use emojis.",
+    "The color palette replaces standard AI-blues with warm, earthy tones (Deep Moss Green and Terracotta). Strictly stick to these tokens.",
+    "Use 'Plus Jakarta Sans' via expo-font for a crisp, legible, numbers-friendly SaaS look. Keep font weights at 400 and 500.",
+    "Implement 4 bottom tabs: Home, Products, Analytics, Broadcast. The Profile screen is pushed from the Home header.",
+    "When layering text over the 'hero_farm' or 'farm_sunset' images, always use a top-to-bottom expo-linear-gradient scrim from transparent to 70%+ surfaceInverse to guarantee text contrast.",
+    "On the Home Dashboard, implement the 'Today's Milk Overview' as a glassmorphism hero card over a faint background image.",
+    "Products screen uses a 2-column grid. Ensure width logic is robust (`(screenWidth - 2*screenPadding - gap) / 2`).",
+    "Broadcast screen must feature a sticky primary CTA ('Send via WhatsApp') pinned to the bottom using KeyboardAvoidingView, hovering over the scrolling contact list."
+  ],
+  "haptics": {
+    "events": {
+      "primary_button_press": "impactLight",
+      "tab_change": "selection",
+      "add_stock_press": "impactMedium",
+      "toggle_segmented_control": "selection"
+    }
+  }
+}
