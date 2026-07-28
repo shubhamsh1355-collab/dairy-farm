@@ -32,7 +32,11 @@ async function request<T = any>(
   opts: { method?: string; body?: any; auth?: boolean } = {}
 ): Promise<T> {
   const { method = "GET", body, auth = true } = opts;
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = { 
+    "Content-Type": "application/json",
+    "Bypass-Tunnel-Reminder": "true",
+    "ngrok-skip-browser-warning": "true"
+  };
   if (auth) {
     const t = await getToken();
     if (t) headers.Authorization = `Bearer ${t}`;
@@ -43,6 +47,13 @@ async function request<T = any>(
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
+  
+  if (text.trim().startsWith("<")) {
+    throw new Error(
+      "Connection intercepted! Please open the backend URL in your browser and click 'Click to Continue' to bypass the security warning: " + API
+    );
+  }
+
   const data = text ? JSON.parse(text) : {};
   if (!res.ok) {
     const msg = data?.detail || data?.message || `Request failed (${res.status})`;
