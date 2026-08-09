@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Dimensions, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Image } from "expo-image";
@@ -7,6 +7,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { BarChart } from "react-native-gifted-charts";
 
 import { api, loadFarm } from "@/src/api";
 import { colors, spacing, radius, shadow, images } from "@/src/theme";
@@ -15,14 +16,16 @@ export default function Home() {
   const router = useRouter();
   const [farm, setFarm] = useState<any>(null);
   const [todayLog, setTodayLog] = useState<any>(null);
+  const [analytics, setAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [f, m] = await Promise.all([loadFarm(), api.todayMilk()]);
+      const [f, m, a] = await Promise.all([loadFarm(), api.todayMilk(), api.analytics()]);
       setFarm(f);
       setTodayLog(m.log);
+      setAnalytics(a);
     } catch (e) {
       console.error(e);
     } finally {
@@ -30,11 +33,17 @@ export default function Home() {
     }
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
-  );
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const series = (analytics?.series || []).slice(-14).map((s: any) => ({
+    value: s.milk,
+    label: s.date.slice(8),
+    frontColor: colors.brandPrimary,
+  }));
+
+  // Max width constraint so it doesn't break on desktop
+  const windowWidth = Dimensions.get("window").width;
+  const chartWidth = Math.min(windowWidth - spacing.xl * 4, 520); // 520 is max width inside the 600px wrapper
 
   return (
     <View style={styles.root}>
@@ -63,10 +72,10 @@ export default function Home() {
             <View style={styles.heroWrap}>
               <Image source={{ uri: images.hero_farm }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
               <LinearGradient
-                colors={["rgba(28,27,26,0.1)", "rgba(28,27,26,0.7)"]}
+                colors={["rgba(6, 95, 70, 0.4)", "rgba(17, 24, 39, 0.9)"]}
                 style={StyleSheet.absoluteFillObject}
               />
-              <BlurView intensity={20} tint="dark" style={styles.heroGlass}>
+              <BlurView intensity={Platform.OS === 'web' ? 0 : 20} tint="dark" style={styles.heroGlass}>
                 <Text style={styles.heroTitle}>Today's Overview</Text>
                 <View style={styles.heroGrid}>
                   <HeroMetric label="Produced" value={`${todayLog?.produced_ltr ?? 0} L`} />
@@ -77,9 +86,32 @@ export default function Home() {
               </BlurView>
             </View>
 
-            <View style={styles.actionsSection}>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Analytics</Text>
+              <View style={styles.chartCard}>
+                <Text style={styles.chartTitle}>Daily milk sales (14 days)</Text>
+                {series.length ? (
+                  <BarChart
+                    data={series}
+                    width={chartWidth}
+                    height={160}
+                    barWidth={14}
+                    spacing={12}
+                    yAxisThickness={0}
+                    xAxisThickness={0}
+                    yAxisTextStyle={{ color: colors.muted, fontSize: 10 }}
+                    xAxisLabelTextStyle={{ color: colors.muted, fontSize: 10 }}
+                    noOfSections={4}
+                  />
+                ) : (
+                  <Text style={styles.empty}>No data yet</Text>
+                )}
+              </View>
+            </View>
+
+            <View style={styles.section}>
               <Text style={styles.sectionTitle}>Quick Actions</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.md, paddingHorizontal: spacing.xl }}>
+              <View style={styles.actionsGrid}>
                 <QuickAction
                   icon="cup-water"
                   label="Log Milk"
@@ -96,9 +128,9 @@ export default function Home() {
                   icon="whatsapp"
                   label="Broadcast"
                   color={colors.success}
-                  onPress={() => router.push("/(tabs)/broadcast")}
+                  onPress={() => router.push("/(tabs)/customers")}
                 />
-              </ScrollView>
+              </View>
             </View>
           </>
         )}
@@ -112,7 +144,7 @@ export default function Home() {
           router.push("/log-milk");
         }}
       >
-        <MaterialCommunityIcons name="plus" size={24} color={colors.onBrandPrimary} />
+        <MaterialCommunityIcons name="plus" size={24} color={colors.onBrandSecondary} />
         <Text style={styles.fabText}>Log Milk</Text>
       </Pressable>
     </View>
@@ -121,9 +153,9 @@ export default function Home() {
 
 function HeroMetric({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
-    <View style={styles.metricCard}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={[styles.metricValue, highlight && { color: colors.success }]}>{value}</Text>
+    <View style={[styles.metricCard, highlight && styles.metricCardHighlight]}>
+      <Text style={[styles.metricLabel, highlight && { color: colors.brandTertiary }]}>{label}</Text>
+      <Text style={[styles.metricValue, highlight && { color: "#FFFFFF" }]}>{value}</Text>
     </View>
   );
 }
@@ -131,6 +163,7 @@ function HeroMetric({ label, value, highlight }: { label: string; value: string;
 function QuickAction({ icon, label, color, onPress }: any) {
   return (
     <Pressable style={styles.actionCard} onPress={onPress}>
+      <LinearGradient colors={[color + "10", color + "00"]} style={StyleSheet.absoluteFillObject} />
       <View style={[styles.actionIcon, { backgroundColor: color + "20" }]}>
         <MaterialCommunityIcons name={icon} size={28} color={color} />
       </View>
@@ -149,7 +182,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   greeting: { fontSize: 13, color: colors.muted },
-  farmName: { fontSize: 22, fontWeight: "700", color: colors.onSurface },
+  farmName: { fontSize: 24, fontWeight: "800", color: colors.onSurface, letterSpacing: -0.5 },
   profileBtn: {
     width: 44,
     height: 44,
@@ -159,18 +192,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   heroWrap: {
-    margin: spacing.xl,
+    marginHorizontal: spacing.xl,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xl,
     borderRadius: radius.lg,
     overflow: "hidden",
-    height: 220,
+    height: 240,
     ...shadow.card,
   },
   heroGlass: {
     flex: 1,
     padding: spacing.xl,
     justifyContent: "center",
+    backgroundColor: Platform.OS === 'web' ? 'rgba(0,0,0,0.3)' : 'transparent',
   },
-  heroTitle: { fontSize: 16, fontWeight: "600", color: colors.onSurfaceInverse, marginBottom: spacing.md },
+  heroTitle: { fontSize: 18, fontWeight: "700", color: colors.onSurfaceInverse, marginBottom: spacing.md },
   heroGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -182,20 +218,32 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    borderColor: "rgba(255,255,255,0.15)",
   },
-  metricLabel: { fontSize: 11, color: "rgba(255,255,255,0.7)" },
-  metricValue: { fontSize: 18, fontWeight: "700", color: colors.onSurfaceInverse, marginTop: 2 },
-  actionsSection: { paddingVertical: spacing.md },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: colors.onSurface, paddingHorizontal: spacing.xl, marginBottom: spacing.md },
+  metricCardHighlight: {
+    backgroundColor: colors.brandPrimary,
+    borderColor: colors.brandPrimary,
+  },
+  metricLabel: { fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: "500" },
+  metricValue: { fontSize: 22, fontWeight: "800", color: colors.onSurfaceInverse, marginTop: 4 },
+  section: { marginBottom: spacing.xxl },
+  sectionTitle: { fontSize: 18, fontWeight: "700", color: colors.onSurface, paddingHorizontal: spacing.xl, marginBottom: spacing.md, letterSpacing: -0.5 },
+  actionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: spacing.xl,
+    gap: spacing.md,
+  },
   actionCard: {
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.lg,
     padding: spacing.lg,
+    flex: 1,
+    minWidth: 100,
     alignItems: "center",
-    width: 110,
     borderWidth: 1,
     borderColor: colors.border,
+    overflow: 'hidden',
     ...shadow.card,
   },
   actionIcon: {
@@ -204,14 +252,25 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
-  actionLabel: { fontSize: 13, fontWeight: "600", color: colors.onSurface },
+  actionLabel: { fontSize: 14, fontWeight: "700", color: colors.onSurface, textAlign: "center" },
+  chartCard: { 
+    marginHorizontal: spacing.xl, 
+    backgroundColor: colors.surfaceSecondary, 
+    borderRadius: radius.lg, 
+    padding: spacing.lg, 
+    borderWidth: 1, 
+    borderColor: colors.border,
+    ...shadow.card,
+  },
+  chartTitle: { fontSize: 14, fontWeight: "600", color: colors.onSurface, marginBottom: spacing.md },
+  empty: { color: colors.muted, textAlign: "center", padding: spacing.lg },
   fab: {
     position: "absolute",
     bottom: 24,
     right: 24,
-    backgroundColor: colors.brandPrimary,
+    backgroundColor: colors.brandSecondary,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: spacing.lg,
@@ -219,6 +278,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     gap: 8,
     ...shadow.card,
+    zIndex: 100,
   },
-  fabText: { color: colors.onBrandPrimary, fontSize: 16, fontWeight: "600" },
+  fabText: { color: colors.onBrandSecondary, fontSize: 16, fontWeight: "700" },
 });

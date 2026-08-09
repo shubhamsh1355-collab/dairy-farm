@@ -203,6 +203,7 @@ export default function Customers() {
                     <Text style={styles.reqBadgeText}>{item.daily_requirement_ltr}L daily</Text>
                   </View>
                 )}
+                <MaterialCommunityIcons name="chevron-right" size={20} color={colors.muted} style={{ marginLeft: spacing.sm }} />
               </Pressable>
             );
           }}
