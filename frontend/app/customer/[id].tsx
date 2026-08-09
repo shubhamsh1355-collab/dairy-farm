@@ -59,8 +59,8 @@ export default function CustomerDetail() {
 
   const handleWhatsApp = () => {
     if (!bill?.contact?.mobile) return;
-    const msg = `Hello ${bill.contact.name}, your bill for ${dayjs().format("MMMM YYYY")} is ₹${bill.total_amount}. Expected: ${bill.expected_milk}L, Skipped: ${bill.days_skipped} days, Delivered: ${bill.actual_delivered}L.`;
-    Linking.openURL(`https://wa.me/${bill.contact.mobile}?text=${encodeURIComponent(msg)}`);
+    const msg = `Hello ${bill.contact.name}, your bill for ${dayjs().format("MMMM YYYY")} is ₹${bill.total_amount}. Expected: ${bill.expected_ltr}L, Skipped: ${bill.total_skipped_ltr}L, Delivered: ${bill.delivered_ltr}L.`;
+    Linking.openURL(`https://wa.me/91${bill.contact.mobile}?text=${encodeURIComponent(msg)}`);
   };
 
   if (loading && !bill) {
@@ -79,7 +79,7 @@ export default function CustomerDetail() {
     );
   }
 
-  const { contact, total_amount, expected_milk, days_skipped, actual_delivered, farm_upi_id } = bill;
+  const { contact, total_amount, expected_ltr, total_skipped_ltr, delivered_ltr, farm_upi_id } = bill;
   const upiUrl = farm_upi_id ? `upi://pay?pa=${farm_upi_id}&pn=Farm&am=${total_amount}&cu=INR` : null;
 
   return (
@@ -103,15 +103,15 @@ export default function CustomerDetail() {
           
           <View style={styles.billRow}>
             <Text style={styles.billLabel}>Expected Milk:</Text>
-            <Text style={styles.billValue}>{expected_milk} L</Text>
+            <Text style={styles.billValue}>{expected_ltr} L</Text>
           </View>
           <View style={styles.billRow}>
-            <Text style={styles.billLabel}>Days Skipped:</Text>
-            <Text style={styles.billValue}>{days_skipped}</Text>
+            <Text style={styles.billLabel}>Skipped Milk:</Text>
+            <Text style={styles.billValue}>{total_skipped_ltr} L</Text>
           </View>
           <View style={styles.billRow}>
             <Text style={styles.billLabel}>Actual Delivered:</Text>
-            <Text style={styles.billValue}>{actual_delivered} L</Text>
+            <Text style={styles.billValue}>{delivered_ltr} L</Text>
           </View>
           
           <View style={styles.divider} />
