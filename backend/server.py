@@ -133,6 +133,11 @@ class MilkSkipIn(BaseModel):
     qty_skipped: float
     milk_type: str = "cow"
 
+class ProductionLogIn(BaseModel):
+    shift: str # "morning" or "evening"
+    cow_qty: float = 0
+    buffalo_qty: float = 0
+
 class CowIn(BaseModel):
     tag: str
     breed: Optional[str] = ""
@@ -545,6 +550,38 @@ async def delete_product(pid: str, farm=Depends(get_farm)):
     if res.deleted_count == 0:
         raise HTTPException(404, "Product not found")
     return {"deleted": True}
+
+# ---------- routes: inventory ----------
+@api.get("/inventory")
+async def get_inventory(farm=Depends(get_farm)):
+    inv = await db.farm_inventory.find_one({"farm_id": farm["id"]}, {"_id": 0})
+    if not inv:
+        inv = {"farm_id": farm["id"], "cow_stock_ltr": 0.0, "buffalo_stock_ltr": 0.0}
+        await db.farm_inventory.insert_one(dict(inv))
+        del inv["_id"]
+    return inv
+
+@api.post("/inventory/production")
+async def log_production(body: ProductionLogIn, farm=Depends(get_farm)):
+    date = today_key()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "farm_id": farm["id"],
+        "date": date,
+        "shift": body.shift,
+        "cow_qty": body.cow_qty,
+        "buffalo_qty": body.buffalo_qty,
+        "created_at": datetime.utcnow()
+    }
+    await db.production_logs.insert_one(dict(doc))
+    
+    # Update tank
+    await db.farm_inventory.update_one(
+        {"farm_id": farm["id"]},
+        {"$inc": {"cow_stock_ltr": body.cow_qty, "buffalo_stock_ltr": body.buffalo_qty}},
+        upsert=True
+    )
+    return {"status": "ok", "logged": doc}
 
 
 # ---------- routes: analytics ----------

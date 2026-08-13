@@ -138,6 +138,10 @@ export const api = {
   getSkips: (id: string, month: string) => request<{ skips: any[] }>(`/contacts/${id}/skips?month=${month}`),
   generateBill: (id: string, month: string) => request<any>(`/contacts/${id}/bill?month=${month}`),
 
+  getInventory: () => request<{ cow_stock_ltr: number, buffalo_stock_ltr: number }>("/inventory"),
+  logProduction: (payload: { shift: string, cow_qty: number, buffalo_qty: number }) => 
+    request("/inventory/production", { method: "POST", body: payload }),
+
   cows: () => request<{ cows: any[] }>("/cows"),
   addCow: (payload: { tag: string; breed?: string; status?: string }) => request("/cows", { method: "POST", body: payload }),
   updateCowStatus: (id: string, status: string) => request(`/cows/${id}/status`, { method: "PATCH", body: { status } }),

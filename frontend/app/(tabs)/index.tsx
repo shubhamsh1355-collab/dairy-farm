@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Dimensions, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Dimensions, Platform, Modal, TextInput, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Image } from "expo-image";
@@ -17,14 +17,22 @@ export default function Home() {
   const [farm, setFarm] = useState<any>(null);
   const [todayLog, setTodayLog] = useState<any>(null);
   const [analytics, setAnalytics] = useState<any>(null);
+  const [inventory, setInventory] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<"total" | "cow" | "buffalo">("total");
+  
+  const [showLogModal, setShowLogModal] = useState(false);
+  const [logShift, setLogShift] = useState<"morning" | "evening">("morning");
+  const [logCow, setLogCow] = useState("");
+  const [logBuf, setLogBuf] = useState("");
+  const [isLogging, setIsLogging] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [f, m, a] = await Promise.all([loadFarm(), api.todayMilk(), api.analytics()]);
+      const [f, m, a, inv] = await Promise.all([loadFarm(), api.todayMilk(), api.analytics(), api.getInventory()]);
       setFarm(f);
+      setInventory(inv);
       
       const logs = m.logs || [];
       const agg = {
@@ -55,6 +63,27 @@ export default function Home() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const handleLogProduction = async () => {
+    if (!logCow && !logBuf) return;
+    setIsLogging(true);
+    try {
+      await api.logProduction({
+        shift: logShift,
+        cow_qty: parseFloat(logCow) || 0,
+        buffalo_qty: parseFloat(logBuf) || 0,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowLogModal(false);
+      setLogCow("");
+      setLogBuf("");
+      await load(); // refresh inventory
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Failed to log production");
+    } finally {
+      setIsLogging(false);
+    }
+  };
 
   const series = (analytics?.series || []).slice(-14).map((s: any) => ({
     value: viewMode === "total" ? s.milk : (viewMode === "cow" ? s.cow_milk : s.buf_milk),
@@ -107,6 +136,30 @@ export default function Home() {
           <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: spacing.xl }} />
         ) : (
           <>
+            <View style={{ marginHorizontal: spacing.xl, marginBottom: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 2, borderColor: colors.brandPrimary, padding: spacing.lg }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
+                <Text style={{ fontSize: 18, fontWeight: "700", color: colors.onSurface }}>Live Milk Tank</Text>
+                <Pressable 
+                  style={{ backgroundColor: colors.brandPrimary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.sm }}
+                  onPress={() => setShowLogModal(true)}
+                >
+                  <Text style={{ color: colors.onBrandPrimary, fontWeight: "600", fontSize: 13 }}>+ Log Production</Text>
+                </Pressable>
+              </View>
+              
+              <View style={{ flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' }}>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: 32, fontWeight: '800', color: colors.onSurface }}>{inventory?.cow_stock_ltr || 0}<Text style={{ fontSize: 16 }}>L</Text></Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.muted }}>🐄 COW STOCK</Text>
+                </View>
+                <View style={{ width: 1, height: 40, backgroundColor: colors.border }} />
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: 32, fontWeight: '800', color: colors.onSurface }}>{inventory?.buffalo_stock_ltr || 0}<Text style={{ fontSize: 16 }}>L</Text></Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.muted }}>🐃 BUFFALO STOCK</Text>
+                </View>
+              </View>
+            </View>
+
             <View style={styles.heroWrap}>
               <Image source={{ uri: images.hero_farm }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
               <LinearGradient
@@ -193,6 +246,38 @@ export default function Home() {
         <MaterialCommunityIcons name="plus" size={24} color={colors.onBrandSecondary} />
         <Text style={styles.fabText}>Log Milk</Text>
       </Pressable>
+
+      <Modal visible={showLogModal} transparent animationType="slide">
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.xl }}>
+            <Text style={{ fontSize: 20, fontWeight: "700", marginBottom: spacing.lg }}>Log Production</Text>
+            
+            <View style={{ flexDirection: "row", marginBottom: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4 }}>
+              <Pressable style={[{ flex: 1, padding: 12, alignItems: "center", borderRadius: radius.sm }, logShift === "morning" && { backgroundColor: colors.surface, ...shadow.sm }]} onPress={() => setLogShift("morning")}>
+                <Text style={[{ fontWeight: "600", color: colors.muted }, logShift === "morning" && { color: colors.brandPrimary }]}>🌅 Morning</Text>
+              </Pressable>
+              <Pressable style={[{ flex: 1, padding: 12, alignItems: "center", borderRadius: radius.sm }, logShift === "evening" && { backgroundColor: colors.surface, ...shadow.sm }]} onPress={() => setLogShift("evening")}>
+                <Text style={[{ fontWeight: "600", color: colors.muted }, logShift === "evening" && { color: colors.brandPrimary }]}>🌆 Evening</Text>
+              </Pressable>
+            </View>
+
+            <Text style={{ fontWeight: "600", marginBottom: 8 }}>Cow Milk Produced (Liters)</Text>
+            <TextInput style={{ backgroundColor: colors.surfaceSecondary, padding: spacing.md, borderRadius: radius.md, marginBottom: spacing.lg, fontSize: 16 }} placeholder="0" keyboardType="numeric" value={logCow} onChangeText={setLogCow} />
+            
+            <Text style={{ fontWeight: "600", marginBottom: 8 }}>Buffalo Milk Produced (Liters)</Text>
+            <TextInput style={{ backgroundColor: colors.surfaceSecondary, padding: spacing.md, borderRadius: radius.md, marginBottom: spacing.xl, fontSize: 16 }} placeholder="0" keyboardType="numeric" value={logBuf} onChangeText={setLogBuf} />
+
+            <View style={{ flexDirection: "row", gap: spacing.md }}>
+              <Pressable style={{ flex: 1, padding: spacing.md, borderRadius: radius.md, alignItems: "center", backgroundColor: colors.surfaceSecondary }} onPress={() => setShowLogModal(false)}>
+                <Text style={{ fontWeight: "600" }}>Cancel</Text>
+              </Pressable>
+              <Pressable style={{ flex: 2, padding: spacing.md, borderRadius: radius.md, alignItems: "center", backgroundColor: colors.brandPrimary }} onPress={handleLogProduction} disabled={isLogging}>
+                {isLogging ? <ActivityIndicator color="#fff" /> : <Text style={{ fontWeight: "700", color: "#fff" }}>Add to Tank</Text>}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
