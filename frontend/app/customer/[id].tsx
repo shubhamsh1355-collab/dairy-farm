@@ -16,8 +16,9 @@ export default function CustomerDetail() {
 
   const [bill, setBill] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [date, setDate] = useState(new Date());
-  const [skipMilkType, setSkipMilkType] = useState<"cow" | "buffalo">("cow");
+  const [selectedCalDate, setSelectedCalDate] = useState<string | null>(null);
+  const [editSkipCow, setEditSkipCow] = useState("");
+  const [editSkipBuf, setEditSkipBuf] = useState("");
   const [addingSkip, setAddingSkip] = useState(false);
 
   // Edit State
@@ -75,21 +76,43 @@ export default function CustomerDetail() {
     }
   };
 
-  const handleAddSkip = async () => {
-    const req = skipMilkType === "cow" ? bill?.contact?.cow_req_ltr : bill?.contact?.buffalo_req_ltr;
-    if (!req) {
-      Alert.alert("Error", `Contact has no ${skipMilkType} requirement set.`);
-      return;
-    }
+  const skipsMap: Record<string, { cow: number, buffalo: number }> = {};
+  if (bill?.skips) {
+    bill.skips.forEach((s: any) => {
+      if (!skipsMap[s.date]) skipsMap[s.date] = { cow: 0, buffalo: 0 };
+      if (s.milk_type === "cow") skipsMap[s.date].cow += s.qty_skipped;
+      if (s.milk_type === "buffalo") skipsMap[s.date].buffalo += s.qty_skipped;
+    });
+  }
+
+  const currentMonthDate = dayjs(bill?.month || new Date());
+  const daysInMonth = currentMonthDate.daysInMonth();
+  const startDay = currentMonthDate.startOf('month').day();
+  const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const blanks = Array.from({ length: startDay }, (_, i) => i);
+
+  const handleDatePress = (dateStr: string) => {
+    setSelectedCalDate(dateStr);
+    const skip = skipsMap[dateStr];
+    setEditSkipCow(String(skip?.cow || 0));
+    setEditSkipBuf(String(skip?.buffalo || 0));
+  };
+
+  const handleSaveSkip = async () => {
+    if (!selectedCalDate) return;
     setAddingSkip(true);
     try {
-      const dateStr = dayjs(date).format("YYYY-MM-DD");
-      await api.addSkip(id as string, dateStr, req, skipMilkType);
+      if (bill?.contact?.cow_req_ltr > 0) {
+        await api.addSkip(id as string, selectedCalDate, parseFloat(editSkipCow) || 0, "cow");
+      }
+      if (bill?.contact?.buffalo_req_ltr > 0) {
+        await api.addSkip(id as string, selectedCalDate, parseFloat(editSkipBuf) || 0, "buffalo");
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert("Success", "Skip recorded");
+      Alert.alert("Success", "Skip updated successfully");
       loadBill();
     } catch (e: any) {
-      Alert.alert("Error", e.message || "Failed to record skip");
+      Alert.alert("Error", e.message || "Failed to update skip");
     } finally {
       setAddingSkip(false);
     }
@@ -217,35 +240,84 @@ export default function CustomerDetail() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Mark Skip</Text>
-          <Text style={styles.skipSub}>Record a missed delivery for this customer.</Text>
+          <Text style={styles.sectionTitle}>Delivery Calendar</Text>
+          <Text style={styles.skipSub}>Green = Delivered, Orange = Partial Skip, Red = Full Skip</Text>
           
-          <View style={styles.segmentedControl}>
-            <Pressable 
-              style={[styles.segment, skipMilkType === "cow" && styles.segmentActive]} 
-              onPress={() => { setSkipMilkType("cow"); Haptics.selectionAsync(); }}>
-              <Text style={[styles.segmentText, skipMilkType === "cow" && styles.segmentTextActive]}>🐄 Cow Milk</Text>
-            </Pressable>
-            <Pressable 
-              style={[styles.segment, skipMilkType === "buffalo" && styles.segmentActive]} 
-              onPress={() => { setSkipMilkType("buffalo"); Haptics.selectionAsync(); }}>
-              <Text style={[styles.segmentText, skipMilkType === "buffalo" && styles.segmentTextActive]}>🐃 Buffalo Milk</Text>
-            </Pressable>
+          <View style={styles.calRow}>
+            {['S','M','T','W','T','F','S'].map((d, i) => (
+              <Text key={i} style={styles.calHeader}>{d}</Text>
+            ))}
+          </View>
+          <View style={styles.calGrid}>
+            {blanks.map(b => <View key={`blank-${b}`} style={styles.calCell} />)}
+            {daysArray.map(d => {
+              const dateStr = `${currentMonthDate.format("YYYY-MM")}-${String(d).padStart(2, "0")}`;
+              const skip = skipsMap[dateStr];
+              
+              let dotColor = colors.success; 
+              const isFuture = dayjs(dateStr).isAfter(dayjs(), 'day');
+              
+              if (isFuture) {
+                dotColor = colors.border;
+              } else if (skip) {
+                const cowReq = bill?.contact?.cow_req_ltr || 0;
+                const bufReq = bill?.contact?.buffalo_req_ltr || 0;
+                const totalReq = cowReq + bufReq;
+                const totalSkipped = (skip.cow || 0) + (skip.buffalo || 0);
+                
+                if (totalSkipped >= totalReq && totalReq > 0) {
+                  dotColor = colors.error;
+                } else if (totalSkipped > 0) {
+                  dotColor = "#F59E0B";
+                }
+              }
+
+              const isSelected = selectedCalDate === dateStr;
+
+              return (
+                <Pressable 
+                  key={d} 
+                  style={[styles.calCell, isSelected && styles.calCellSelected]} 
+                  onPress={() => handleDatePress(dateStr)}
+                >
+                  <Text style={[styles.calDayText, isSelected && { color: colors.brandPrimary, fontWeight: "700" }]}>{d}</Text>
+                  <View style={[styles.calDot, { backgroundColor: dotColor }]} />
+                </Pressable>
+              );
+            })}
           </View>
 
-          <View style={styles.dateSelector}>
-            <Pressable onPress={() => setDate(dayjs(date).subtract(1, 'day').toDate())} style={styles.dateBtn}>
-              <MaterialCommunityIcons name="chevron-left" size={24} color={colors.onSurface} />
-            </Pressable>
-            <Text style={styles.dateText}>{dayjs(date).format('DD MMM YYYY')}</Text>
-            <Pressable onPress={() => setDate(dayjs(date).add(1, 'day').toDate())} style={styles.dateBtn}>
-              <MaterialCommunityIcons name="chevron-right" size={24} color={colors.onSurface} />
-            </Pressable>
-          </View>
-          
-          <Pressable style={styles.primaryBtn} onPress={handleAddSkip} disabled={addingSkip}>
-            {addingSkip ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryBtnText}>Mark Skip</Text>}
-          </Pressable>
+          {selectedCalDate && (
+            <View style={styles.calDetailsBox}>
+              <Text style={styles.calDetailsTitle}>{dayjs(selectedCalDate).format("DD MMM YYYY")}</Text>
+              
+              <View style={{ flexDirection: "row", gap: spacing.md, marginBottom: spacing.md }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Cow Skipped (L)</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    value={editSkipCow} 
+                    onChangeText={setEditSkipCow} 
+                    keyboardType="decimal-pad" 
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Buf Skipped (L)</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    value={editSkipBuf} 
+                    onChangeText={setEditSkipBuf} 
+                    keyboardType="decimal-pad" 
+                  />
+                </View>
+              </View>
+              <Text style={{fontSize: 12, color: colors.muted, marginBottom: spacing.md}}>Set to 0 to remove skip and mark as fully delivered.</Text>
+              
+              <Pressable style={styles.primaryBtn} onPress={handleSaveSkip} disabled={addingSkip}>
+                {addingSkip ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryBtnText}>Save Skip for {dayjs(selectedCalDate).format("DD MMM")}</Text>}
+              </Pressable>
+            </View>
+          )}
         </View>
 
         {upiUrl && (
@@ -339,6 +411,18 @@ const styles = StyleSheet.create({
     height: 48,
     color: colors.onSurface,
   },
+  
+  calRow: { flexDirection: "row", justifyContent: "space-around", marginBottom: spacing.sm },
+  calHeader: { width: 36, textAlign: "center", fontSize: 13, fontWeight: "600", color: colors.muted },
+  calGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-start", rowGap: spacing.sm },
+  calCell: { width: `${100 / 7}%`, height: 44, alignItems: "center", justifyContent: "center", borderRadius: radius.sm },
+  calCellSelected: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.brandPrimary },
+  calDayText: { fontSize: 15, color: colors.onSurface, marginBottom: 2 },
+  calDot: { width: 6, height: 6, borderRadius: 3 },
+  
+  calDetailsBox: { marginTop: spacing.xl, padding: spacing.md, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
+  calDetailsTitle: { fontSize: 16, fontWeight: "600", color: colors.onSurface, marginBottom: spacing.md },
+  
   segmentedControl: { flexDirection: "row", backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },
   segment: { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: radius.sm },
   segmentActive: { backgroundColor: colors.surface, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },

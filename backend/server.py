@@ -759,6 +759,15 @@ async def update_contact(cid: str, body: ContactIn, farm=Depends(get_farm)):
 
 @api.post("/contacts/{cid}/skips")
 async def add_skip(cid: str, body: MilkSkipIn, farm=Depends(get_farm)):
+    if body.qty_skipped <= 0:
+        await db.milk_skips.delete_one({
+            "farm_id": farm["id"],
+            "contact_id": cid,
+            "date": body.date,
+            "milk_type": body.milk_type
+        })
+        return {"status": "deleted"}
+    
     doc = {
         "id": str(uuid.uuid4()),
         "farm_id": farm["id"],
@@ -769,7 +778,18 @@ async def add_skip(cid: str, body: MilkSkipIn, farm=Depends(get_farm)):
         "milk_type": body.milk_type,
         "created_at": iso(now_utc()),
     }
-    await db.milk_skips.insert_one(dict(doc))
+    
+    # Upsert to prevent duplicate skips for the same day and milk_type
+    await db.milk_skips.update_one(
+        {
+            "farm_id": farm["id"],
+            "contact_id": cid,
+            "date": body.date,
+            "milk_type": body.milk_type
+        },
+        {"$set": doc},
+        upsert=True
+    )
     return {"skip": doc}
 
 @api.get("/contacts/{cid}/skips")
@@ -840,6 +860,7 @@ async def generate_bill(cid: str, month: str, farm=Depends(get_farm)):
         "products": txs,
         "product_amount": product_amount,
         "total_amount": total_amount,
+        "skips": skips,
         "farm_upi_id": farm.get("upi_id")
     }
 
