@@ -119,7 +119,7 @@ export default function AuthScreen() {
     }
     setLoading(true);
     try {
-      const res = await api.deliveryLogin({ mobile: fullMobile, pin });
+      const res = await api.deliveryLogin({ mobile: mobile.trim(), pin });
       if (res.token && res.boy) {
         await saveSession(res.token, res.boy, "delivery_boy");
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
