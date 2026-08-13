@@ -785,10 +785,22 @@ async def generate_bill(cid: str, month: str, farm=Depends(get_farm)):
         
     y, m = map(int, month.split('-'))
     today = now_utc()
+    
     if today.year == y and today.month == m:
-        days = today.day
+        end_day = today.day
     else:
-        days = calendar.monthrange(y, m)[1]
+        end_day = calendar.monthrange(y, m)[1]
+        
+    start_day = 1
+    if "created_at" in contact:
+        try:
+            created = datetime.fromisoformat(contact["created_at"].replace("Z", "+00:00"))
+            if created.year == y and created.month == m:
+                start_day = created.day
+        except ValueError:
+            pass
+            
+    days = max(0, end_day - start_day + 1)
         
     cow_req = float(contact.get("cow_req_ltr", contact.get("daily_requirement_ltr", 0)))
     cow_rate = float(contact.get("cow_rate", contact.get("rate_per_ltr", 60)))

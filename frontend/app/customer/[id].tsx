@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, ScrollView, Linking } from "react-native";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert, ScrollView, Linking, Modal, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -20,6 +20,14 @@ export default function CustomerDetail() {
   const [skipMilkType, setSkipMilkType] = useState<"cow" | "buffalo">("cow");
   const [addingSkip, setAddingSkip] = useState(false);
 
+  // Edit State
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editMobile, setEditMobile] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editCowReq, setEditCowReq] = useState("");
+  const [editBufReq, setEditBufReq] = useState("");
+
   const loadBill = useCallback(async () => {
     setLoading(true);
     try {
@@ -38,6 +46,34 @@ export default function CustomerDetail() {
       loadBill();
     }, [loadBill])
   );
+
+  const handleEditOpen = () => {
+    if (!bill?.contact) return;
+    setEditName(bill.contact.name || "");
+    setEditMobile(bill.contact.mobile || "");
+    setEditAddress(bill.contact.address || "");
+    setEditCowReq(String(bill.contact.cow_req_ltr || 0));
+    setEditBufReq(String(bill.contact.buffalo_req_ltr || 0));
+    setIsEditing(true);
+  };
+
+  const handleEditSave = async () => {
+    try {
+      await api.updateContact(id as string, {
+        name: editName,
+        mobile: editMobile,
+        address: editAddress,
+        cow_req_ltr: parseFloat(editCowReq) || 0,
+        buffalo_req_ltr: parseFloat(editBufReq) || 0,
+      });
+      setIsEditing(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Success", "Customer updated successfully");
+      loadBill();
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Failed to update customer");
+    }
+  };
 
   const handleAddSkip = async () => {
     const req = skipMilkType === "cow" ? bill?.contact?.cow_req_ltr : bill?.contact?.buffalo_req_ltr;
@@ -94,10 +130,51 @@ export default function CustomerDetail() {
           <Text style={styles.title}>{contact.name}</Text>
           <Text style={styles.sub}>{contact.mobile}</Text>
         </View>
+        <Pressable style={styles.waBtn} onPress={handleEditOpen}>
+          <MaterialCommunityIcons name="pencil" size={24} color={colors.brandPrimary} />
+        </Pressable>
         <Pressable style={styles.waBtn} onPress={handleWhatsApp}>
           <MaterialCommunityIcons name="whatsapp" size={24} color="#25D366" />
         </Pressable>
       </View>
+
+      <Modal visible={isEditing} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
+          <View style={[styles.header, { marginTop: spacing.md }]}>
+            <Text style={[styles.title, { flex: 1 }]}>Edit Customer</Text>
+            <Pressable onPress={() => setIsEditing(false)}>
+              <MaterialCommunityIcons name="close" size={24} color={colors.onSurface} />
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: spacing.xl, gap: spacing.md }}>
+            <View>
+              <Text style={styles.label}>Name</Text>
+              <TextInput style={styles.input} value={editName} onChangeText={setEditName} />
+            </View>
+            <View>
+              <Text style={styles.label}>Mobile</Text>
+              <TextInput style={styles.input} value={editMobile} onChangeText={setEditMobile} keyboardType="phone-pad" />
+            </View>
+            <View>
+              <Text style={styles.label}>Address / Location</Text>
+              <TextInput style={styles.input} value={editAddress} onChangeText={setEditAddress} />
+            </View>
+            <View style={{ flexDirection: "row", gap: spacing.md }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Cow Req (L)</Text>
+                <TextInput style={styles.input} value={editCowReq} onChangeText={setEditCowReq} keyboardType="decimal-pad" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Buf Req (L)</Text>
+                <TextInput style={styles.input} value={editBufReq} onChangeText={setEditBufReq} keyboardType="decimal-pad" />
+              </View>
+            </View>
+            <Pressable style={[styles.primaryBtn, { marginTop: spacing.lg }]} onPress={handleEditSave}>
+              <Text style={styles.primaryBtnText}>Save Changes</Text>
+            </Pressable>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
       <ScrollView contentContainerStyle={{ padding: spacing.xl, gap: spacing.xl }}>
         <View style={styles.card}>
@@ -249,8 +326,19 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     alignItems: "center",
   },
-  qrSub: { fontSize: 13, color: colors.muted, marginBottom: spacing.xl },
-  qrWrapper: { padding: spacing.md, backgroundColor: "#FFF", borderRadius: radius.md },
+  qrSub: { fontSize: 13, color: colors.muted, marginBottom: spacing.md },
+  qrWrapper: { backgroundColor: "#fff", padding: spacing.md, borderRadius: radius.md },
+  
+  label: { fontSize: 14, fontWeight: "600", color: colors.onSurface, marginBottom: 4 },
+  input: {
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    height: 48,
+    color: colors.onSurface,
+  },
   segmentedControl: { flexDirection: "row", backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },
   segment: { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: radius.sm },
   segmentActive: { backgroundColor: colors.surface, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
