@@ -1,9 +1,10 @@
 import { useCallback, useState } from "react";
-import { View, Text, StyleSheet, TextInput, FlatList, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from "react-native";
+import { View, Text, StyleSheet, TextInput, FlatList, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Share } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as Clipboard from "expo-clipboard";
 
 import { Picker } from "@react-native-picker/picker";
 import { api } from "@/src/api";
@@ -119,14 +120,17 @@ export default function Customers() {
       const res = await api.generateInvite();
       const baseUrl = Platform.OS === "web" && typeof window !== "undefined" ? window.location.origin : "https://dairy-farm-w8p6.vercel.app";
       const url = `${baseUrl}/invite/${res.invite_token}`;
-      Alert.alert(
-        "Invite Link Generated",
-        `Share this link with your customer:\n\n${url}`,
-        [
-          { text: "Close", style: "cancel" },
-          // Would normally use Clipboard/Share here
-        ]
-      );
+      
+      try {
+        await Clipboard.setStringAsync(url);
+        if (Platform.OS !== "web") {
+          await Share.share({ message: `Register for milk delivery: ${url}` });
+        } else {
+          Alert.alert("Link Copied!", `The invite link has been copied to your clipboard.\n\nYou can now paste it directly into WhatsApp:\n\n${url}`);
+        }
+      } catch (err) {
+        Alert.alert("Link Generated", `Please copy this link:\n\n${url}`);
+      }
     } catch(e: any) {
       Alert.alert("Error", e.message);
     }
