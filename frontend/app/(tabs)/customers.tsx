@@ -117,7 +117,8 @@ export default function Customers() {
   const handleGenerateInvite = async () => {
     try {
       const res = await api.generateInvite();
-      const url = `https://ksheerdhara.app/invite/${res.invite_token}`;
+      const baseUrl = Platform.OS === "web" && typeof window !== "undefined" ? window.location.origin : "https://dairy-farm-w8p6.vercel.app";
+      const url = `${baseUrl}/invite/${res.invite_token}`;
       Alert.alert(
         "Invite Link Generated",
         `Share this link with your customer:\n\n${url}`,
