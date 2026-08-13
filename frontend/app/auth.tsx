@@ -21,7 +21,7 @@ import { api, saveSession } from "@/src/api";
 import { colors, spacing, radius, images } from "@/src/theme";
 import { Logo } from "@/src/Logo";
 
-type Step = "mobile" | "otp" | "register";
+type Step = "mobile" | "otp" | "register" | "delivery_login";
 
 export default function AuthScreen() {
   const router = useRouter();
@@ -29,6 +29,7 @@ export default function AuthScreen() {
   const [mobile, setMobile] = useState("");
   const [otp, setOtp] = useState("");
   const [devOtp, setDevOtp] = useState("");
+  const [pin, setPin] = useState("");
   const [farmName, setFarmName] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -69,9 +70,9 @@ export default function AuthScreen() {
         return;
       }
       if (res.token && res.farm) {
-        await saveSession(res.token, res.farm);
+        await saveSession(res.token, res.farm, res.role || "admin");
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        router.replace("/(tabs)");
+        router.replace(res.role === "admin" ? "/(tabs)" : "/delivery");
       }
     } catch (e: any) {
       setError(e.message);
@@ -95,9 +96,34 @@ export default function AuthScreen() {
         owner_name: ownerName,
       });
       if (res.token && res.farm) {
-        await saveSession(res.token, res.farm);
+        await saveSession(res.token, res.farm, "admin");
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.replace("/(tabs)");
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeliveryLogin() {
+    setError("");
+    if (mobile.replace(/\D/g, "").length < 10) {
+      setError("Enter a valid 10-digit mobile number");
+      return;
+    }
+    if (pin.length !== 4) {
+      setError("Enter a 4-digit PIN");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.deliveryLogin({ mobile: fullMobile, pin });
+      if (res.token && res.boy) {
+        await saveSession(res.token, res.boy, "delivery_boy");
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        router.replace("/delivery");
       }
     } catch (e: any) {
       setError(e.message);
@@ -156,6 +182,53 @@ export default function AuthScreen() {
                 ) : (
                   <Text style={styles.ctaText}>Send OTP</Text>
                 )}
+              </Pressable>
+              
+              <Pressable onPress={() => setStep("delivery_login")} style={styles.link}>
+                <Text style={styles.linkText}>I am a Delivery Partner</Text>
+              </Pressable>
+            </>
+          )}
+
+          {step === "delivery_login" && (
+            <>
+              <Text style={styles.title}>Delivery Login</Text>
+              <Text style={styles.sub}>Enter your mobile number and 4-digit PIN</Text>
+              <View style={styles.inputRow}>
+                <View style={styles.countryPill}>
+                  <Text style={styles.countryText}>+91</Text>
+                </View>
+                <TextInput
+                  value={mobile}
+                  onChangeText={setMobile}
+                  keyboardType="phone-pad"
+                  placeholder="10-digit mobile"
+                  placeholderTextColor={colors.muted}
+                  style={styles.input}
+                  maxLength={10}
+                />
+              </View>
+              <TextInput
+                value={pin}
+                onChangeText={setPin}
+                keyboardType="number-pad"
+                placeholder="4-digit PIN"
+                secureTextEntry
+                placeholderTextColor={colors.muted}
+                style={[styles.input, { marginTop: spacing.md, textAlign: "center", letterSpacing: 8, fontSize: 20 }]}
+                maxLength={4}
+              />
+              {!!error && <Text style={styles.err}>{error}</Text>}
+              <Pressable style={styles.cta} onPress={handleDeliveryLogin} disabled={loading}>
+                {loading ? (
+                  <ActivityIndicator color={colors.onBrandPrimary} />
+                ) : (
+                  <Text style={styles.ctaText}>Sign In</Text>
+                )}
+              </Pressable>
+              
+              <Pressable onPress={() => setStep("mobile")} style={styles.link}>
+                <Text style={styles.linkText}>I am a Farm Owner</Text>
               </Pressable>
             </>
           )}

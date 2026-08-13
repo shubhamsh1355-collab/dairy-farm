@@ -5,10 +5,11 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
+import { Picker } from "@react-native-picker/picker";
 import { api } from "@/src/api";
 import { colors, spacing, radius, shadow } from "@/src/theme";
 
-type Contact = { id: string; name: string; mobile: string; cow_req_ltr?: number; buffalo_req_ltr?: number; cow_rate?: number; buffalo_rate?: number; };
+type Contact = { id: string; name: string; mobile: string; cow_req_ltr?: number; buffalo_req_ltr?: number; cow_rate?: number; buffalo_rate?: number; delivery_boy_id?: string; address?: string; };
 
 export default function Customers() {
   const router = useRouter();
@@ -25,11 +26,19 @@ export default function Customers() {
   const [newContactBufRate, setNewContactBufRate] = useState("70");
   const [isAddingContact, setIsAddingContact] = useState(false);
 
+  const [boys, setBoys] = useState<any[]>([]);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [selectedBoyId, setSelectedBoyId] = useState("");
+
   const loadContacts = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.contacts();
+      const [res, boyRes] = await Promise.all([
+        api.contacts(),
+        api.deliveryBoys()
+      ]);
       setContacts(res.contacts);
+      setBoys(boyRes.delivery_boys || []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -80,6 +89,48 @@ export default function Customers() {
     }
   };
 
+  const handleBulkAssign = async () => {
+    if (!selectedBoyId) {
+      Alert.alert("Select a delivery partner");
+      return;
+    }
+    setSending(true);
+    try {
+      for (const cid of Array.from(selected)) {
+        const c = contacts.find(x => x.id === cid);
+        if (c) {
+          await api.updateContact(cid, { ...c, delivery_boy_id: selectedBoyId });
+        }
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Success", "Customers assigned successfully!");
+      setShowAssignModal(false);
+      setSelected(new Set());
+      loadContacts();
+    } catch(e: any) {
+      Alert.alert("Error", e.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleGenerateInvite = async () => {
+    try {
+      const res = await api.generateInvite();
+      const url = `https://ksheerdhara.app/invite/${res.invite_token}`;
+      Alert.alert(
+        "Invite Link Generated",
+        `Share this link with your customer:\n\n${url}`,
+        [
+          { text: "Close", style: "cancel" },
+          // Would normally use Clipboard/Share here
+        ]
+      );
+    } catch(e: any) {
+      Alert.alert("Error", e.message);
+    }
+  };
+
   const handleAddContact = async () => {
     if (!newContactName.trim() || !newContactMobile.trim()) {
       Alert.alert("Error", "Name and mobile are required.");
@@ -112,10 +163,16 @@ export default function Customers() {
           <Text style={styles.title}>Customers</Text>
           <Text style={styles.sub}>Manage and Broadcast</Text>
         </View>
-        <Pressable style={styles.addBtn} onPress={() => setIsAddingContact(!isAddingContact)}>
-          <MaterialCommunityIcons name={isAddingContact ? "close" : "account-plus"} size={20} color={colors.onBrandPrimary} />
-          <Text style={styles.addBtnText}>{isAddingContact ? "Cancel" : "Add Contact"}</Text>
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          <Pressable style={styles.inviteBtn} onPress={handleGenerateInvite}>
+            <MaterialCommunityIcons name="link-variant" size={18} color={colors.brandPrimary} />
+            <Text style={styles.inviteBtnText}>Invite</Text>
+          </Pressable>
+          <Pressable style={styles.addBtn} onPress={() => setIsAddingContact(!isAddingContact)}>
+            <MaterialCommunityIcons name={isAddingContact ? "close" : "account-plus"} size={18} color={colors.onBrandPrimary} />
+            <Text style={styles.addBtnText}>{isAddingContact ? "Cancel" : "Add"}</Text>
+          </Pressable>
+        </View>
       </SafeAreaView>
 
       {isAddingContact && (
@@ -220,14 +277,21 @@ export default function Customers() {
                   <Text style={styles.contactName}>{item.name}</Text>
                   <Text style={styles.contactMobile}>{item.mobile}</Text>
                 </View>
-                {(!!item.cow_req_ltr || !!item.buffalo_req_ltr) && (
-                  <View style={styles.reqBadge}>
-                    <Text style={styles.reqBadgeText}>
-                      {item.cow_req_ltr ? `${item.cow_req_ltr}L 🐄 ` : ""}
-                      {item.buffalo_req_ltr ? `${item.buffalo_req_ltr}L 🐃` : ""}
+                <View style={{ alignItems: "flex-end", gap: 4 }}>
+                  {(!!item.cow_req_ltr || !!item.buffalo_req_ltr) && (
+                    <View style={styles.reqBadge}>
+                      <Text style={styles.reqBadgeText}>
+                        {item.cow_req_ltr ? `${item.cow_req_ltr}L 🐄 ` : ""}
+                        {item.buffalo_req_ltr ? `${item.buffalo_req_ltr}L 🐃` : ""}
+                      </Text>
+                    </View>
+                  )}
+                  {item.delivery_boy_id && (
+                    <Text style={{ fontSize: 10, color: colors.brandPrimary, fontWeight: "600" }}>
+                      Assigned: {boys.find(b => b.id === item.delivery_boy_id)?.name || "Unknown"}
                     </Text>
-                  </View>
-                )}
+                  )}
+                </View>
                 <MaterialCommunityIcons name="chevron-right" size={20} color={colors.muted} style={{ marginLeft: spacing.sm }} />
               </Pressable>
             );
@@ -241,21 +305,60 @@ export default function Customers() {
       )}
 
       <View style={styles.footer}>
-        <Pressable
-          style={[styles.sendBtn, (selected.size === 0 || !message.trim()) && { opacity: 0.5 }]}
-          onPress={handleSend}
-          disabled={selected.size === 0 || !message.trim() || sending}
-        >
-          {sending ? (
-            <ActivityIndicator color={colors.onBrandPrimary} />
-          ) : (
-            <>
-              <MaterialCommunityIcons name="whatsapp" size={20} color={colors.onBrandPrimary} />
-              <Text style={styles.sendBtnText}>Send via WhatsApp</Text>
-            </>
-          )}
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          <Pressable
+            style={[styles.sendBtn, { flex: 1, backgroundColor: colors.brandSecondary }, selected.size === 0 && { opacity: 0.5 }]}
+            onPress={() => setShowAssignModal(true)}
+            disabled={selected.size === 0 || sending}
+          >
+            <MaterialCommunityIcons name="moped" size={20} color="#fff" />
+            <Text style={styles.sendBtnText}>Assign Boy</Text>
+          </Pressable>
+          
+          <Pressable
+            style={[styles.sendBtn, { flex: 1 }, (selected.size === 0 || !message.trim()) && { opacity: 0.5 }]}
+            onPress={handleSend}
+            disabled={selected.size === 0 || !message.trim() || sending}
+          >
+            {sending ? (
+              <ActivityIndicator color={colors.onBrandPrimary} />
+            ) : (
+              <>
+                <MaterialCommunityIcons name="whatsapp" size={20} color={colors.onBrandPrimary} />
+                <Text style={styles.sendBtnText}>Broadcast</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
       </View>
+
+      {/* Bulk Assign Modal */}
+      {showAssignModal && (
+        <View style={StyleSheet.absoluteFill}>
+          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: spacing.xl }}>
+            <View style={{ backgroundColor: colors.surface, padding: spacing.xl, borderRadius: radius.lg }}>
+              <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: spacing.md }}>Assign {selected.size} Customers</Text>
+              <Text style={{ fontSize: 14, color: colors.muted, marginBottom: spacing.md }}>Select a delivery partner for the daily route.</Text>
+              
+              <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, marginBottom: spacing.xl }}>
+                <Picker selectedValue={selectedBoyId} onValueChange={setSelectedBoyId}>
+                  <Picker.Item label="Select Partner..." value="" />
+                  {boys.map(b => <Picker.Item key={b.id} label={b.name} value={b.id} />)}
+                </Picker>
+              </View>
+
+              <View style={{ flexDirection: "row", gap: spacing.md }}>
+                <Pressable style={{ flex: 1, height: 44, justifyContent: "center", alignItems: "center" }} onPress={() => setShowAssignModal(false)}>
+                  <Text style={{ color: colors.muted, fontWeight: "600" }}>Cancel</Text>
+                </Pressable>
+                <Pressable style={{ flex: 1, height: 44, backgroundColor: colors.brandPrimary, borderRadius: radius.md, justifyContent: "center", alignItems: "center" }} onPress={handleBulkAssign} disabled={sending}>
+                  {sending ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "600" }}>Confirm Assign</Text>}
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -281,6 +384,16 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   addBtnText: { color: colors.onBrandPrimary, fontWeight: "600", fontSize: 13 },
+  inviteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.brandPrimary + "15",
+    paddingHorizontal: spacing.md,
+    height: 36,
+    borderRadius: 999,
+  },
+  inviteBtnText: { color: colors.brandPrimary, fontWeight: "600", fontSize: 13 },
   addContactCard: {
     marginHorizontal: spacing.xl,
     marginBottom: spacing.md,

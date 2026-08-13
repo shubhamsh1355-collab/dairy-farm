@@ -66,6 +66,15 @@ export default function TabsLayout() {
             ),
           }}
         />
+        <Tabs.Screen
+          name="delivery-boys"
+          options={{
+            title: "Delivery",
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="moped" size={size} color={color} />
+            ),
+          }}
+        />
       </Tabs>
     </MaxWidthWrapper>
   );

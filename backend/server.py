@@ -98,6 +98,33 @@ class ContactIn(BaseModel):
     buffalo_req_ltr: float = 0
     cow_rate: float = 60
     buffalo_rate: float = 70
+    address: Optional[str] = ""
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    delivery_boy_id: Optional[str] = None
+
+class DeliveryBoyIn(BaseModel):
+    name: str
+    mobile: str
+    pin: str
+
+class DeliveryBoyLogin(BaseModel):
+    mobile: str
+    pin: str
+
+class CustomerRegisterIn(BaseModel):
+    invite_token: str
+    name: str
+    mobile: str
+    cow_req_ltr: float = 0
+    buffalo_req_ltr: float = 0
+    address: Optional[str] = ""
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+class DeliveryMarkIn(BaseModel):
+    contact_id: str
+    status: str # "delivered" or "skipped"
 
 class MilkSkipIn(BaseModel):
     date: str  # YYYY-MM-DD
@@ -132,6 +159,15 @@ async def get_farm(authorization: Optional[str] = Header(None)) -> dict:
     if not farm:
         raise HTTPException(401, "Invalid or expired token")
     return farm
+
+async def get_delivery_boy(authorization: Optional[str] = Header(None)) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Missing auth token")
+    token = authorization.split(" ", 1)[1].strip()
+    boy = await db.delivery_boys.find_one({"token": token}, {"_id": 0})
+    if not boy:
+        raise HTTPException(401, "Invalid or expired token")
+    return boy
 
 
 # ---------- routes: auth ----------
@@ -212,13 +248,134 @@ async def verify_otp(body: VerifyOtpIn):
 
     await db.otps.delete_one({"mobile": mobile})
     farm.pop("_id", None)
-    return {"needs_registration": False, "is_new": is_new, "token": token, "farm": farm}
+    return {"needs_registration": False, "is_new": is_new, "token": token, "farm": farm, "role": "admin"}
+
+@api.post("/auth/delivery/login")
+async def delivery_login(body: DeliveryBoyLogin):
+    boy = await db.delivery_boys.find_one({"mobile": body.mobile, "pin": body.pin}, {"_id": 0})
+    if not boy:
+        raise HTTPException(401, "Invalid mobile or PIN")
+    token = str(uuid.uuid4())
+    await db.delivery_boys.update_one({"id": boy["id"]}, {"$set": {"token": token}})
+    boy["token"] = token
+    return {"role": "delivery_boy", "token": token, "boy": boy}
 
 
 @api.get("/farm/me")
 async def me(farm=Depends(get_farm)):
     return {"farm": farm}
 
+# ---------- routes: delivery boys ----------
+@api.get("/delivery-boys")
+async def get_delivery_boys(farm=Depends(get_farm)):
+    boys = await db.delivery_boys.find({"farm_id": farm["id"]}, {"_id": 0}).to_list(100)
+    return {"delivery_boys": boys}
+
+@api.post("/delivery-boys")
+async def add_delivery_boy(body: DeliveryBoyIn, farm=Depends(get_farm)):
+    doc = {
+        "id": str(uuid.uuid4()),
+        "farm_id": farm["id"],
+        "name": body.name.strip(),
+        "mobile": body.mobile.strip(),
+        "pin": body.pin.strip(),
+        "created_at": iso(now_utc()),
+    }
+    await db.delivery_boys.insert_one(dict(doc))
+    return {"delivery_boy": doc}
+
+@api.delete("/delivery-boys/{boy_id}")
+async def delete_delivery_boy(boy_id: str, farm=Depends(get_farm)):
+    await db.delivery_boys.delete_one({"id": boy_id, "farm_id": farm["id"]})
+    return {"status": "ok"}
+
+@api.get("/delivery/route")
+async def get_delivery_route(boy=Depends(get_delivery_boy)):
+    contacts = await db.contacts.find({"delivery_boy_id": boy["id"]}, {"_id": 0}).to_list(1000)
+    # also fetch today's delivery status for each
+    date = today_key()
+    skips = await db.milk_skips.find({"date": date}, {"_id": 0}).to_list(1000)
+    deliveries = await db.deliveries.find({"date": date, "delivery_boy_id": boy["id"]}, {"_id": 0}).to_list(1000)
+    return {"route": contacts, "skips": skips, "deliveries": deliveries}
+
+@api.post("/delivery/mark")
+async def mark_delivery(body: DeliveryMarkIn, boy=Depends(get_delivery_boy)):
+    date = today_key()
+    if body.status == "skipped":
+        contact = await db.contacts.find_one({"id": body.contact_id})
+        if contact:
+            # We skip total requested amount for simplicity for delivery boys
+            if contact.get("cow_req_ltr", 0) > 0:
+                await db.milk_skips.update_one(
+                    {"farm_id": contact["farm_id"], "contact_id": body.contact_id, "date": date, "milk_type": "cow"},
+                    {"$set": {"qty_skipped": contact.get("cow_req_ltr")}}, upsert=True
+                )
+            if contact.get("buffalo_req_ltr", 0) > 0:
+                await db.milk_skips.update_one(
+                    {"farm_id": contact["farm_id"], "contact_id": body.contact_id, "date": date, "milk_type": "buffalo"},
+                    {"$set": {"qty_skipped": contact.get("buffalo_req_ltr")}}, upsert=True
+                )
+    
+    doc = {
+        "id": str(uuid.uuid4()),
+        "farm_id": boy["farm_id"],
+        "delivery_boy_id": boy["id"],
+        "contact_id": body.contact_id,
+        "date": date,
+        "status": body.status,
+        "created_at": iso(now_utc())
+    }
+    await db.deliveries.update_one(
+        {"delivery_boy_id": boy["id"], "contact_id": body.contact_id, "date": date},
+        {"$set": doc}, upsert=True
+    )
+    return {"status": "ok"}
+
+# ---------- routes: invites & registration ----------
+@api.post("/invites")
+async def generate_invite(farm=Depends(get_farm)):
+    token = str(uuid.uuid4())[:8]
+    doc = {
+        "id": token,
+        "farm_id": farm["id"],
+        "used": False,
+        "created_at": iso(now_utc())
+    }
+    await db.invites.insert_one(dict(doc))
+    return {"invite_token": token}
+
+@api.get("/invites/{token}")
+async def check_invite(token: str):
+    inv = await db.invites.find_one({"id": token}, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Invalid invite link")
+    return {"valid": True, "used": inv.get("used", False)}
+
+@api.post("/invites/register")
+async def register_customer(body: CustomerRegisterIn):
+    inv = await db.invites.find_one({"id": body.invite_token}, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Invalid invite link")
+    if inv.get("used"):
+        return {"already_registered": True}
+    
+    doc = {
+        "id": str(uuid.uuid4()),
+        "farm_id": inv["farm_id"],
+        "name": body.name.strip(),
+        "mobile": body.mobile.strip(),
+        "cow_req_ltr": body.cow_req_ltr,
+        "buffalo_req_ltr": body.buffalo_req_ltr,
+        "cow_rate": 60, # defaults
+        "buffalo_rate": 70,
+        "address": body.address.strip() if body.address else "",
+        "lat": body.lat,
+        "lng": body.lng,
+        "created_at": iso(now_utc()),
+    }
+    await db.contacts.insert_one(dict(doc))
+    await db.invites.update_one({"id": body.invite_token}, {"$set": {"used": True}})
+    return {"success": True, "contact": doc}
 
 # ---------- routes: milk ----------
 @api.post("/milk/log")
@@ -459,10 +616,34 @@ async def add_contact(body: ContactIn, farm=Depends(get_farm)):
         "buffalo_req_ltr": body.buffalo_req_ltr,
         "cow_rate": body.cow_rate,
         "buffalo_rate": body.buffalo_rate,
+        "address": body.address.strip() if body.address else "",
+        "lat": body.lat,
+        "lng": body.lng,
+        "delivery_boy_id": body.delivery_boy_id,
         "created_at": iso(now_utc()),
     }
     await db.contacts.insert_one(dict(doc))
     return {"contact": doc}
+
+@api.put("/contacts/{contact_id}")
+async def update_contact(contact_id: str, body: ContactIn, farm=Depends(get_farm)):
+    update_data = {
+        "name": body.name.strip(),
+        "mobile": body.mobile.strip(),
+        "cow_req_ltr": body.cow_req_ltr,
+        "buffalo_req_ltr": body.buffalo_req_ltr,
+        "cow_rate": body.cow_rate,
+        "buffalo_rate": body.buffalo_rate,
+        "address": body.address.strip() if body.address else "",
+        "lat": body.lat,
+        "lng": body.lng,
+        "delivery_boy_id": body.delivery_boy_id,
+    }
+    await db.contacts.update_one(
+        {"id": contact_id, "farm_id": farm["id"]},
+        {"$set": update_data}
+    )
+    return {"status": "ok"}
 
 
 @api.delete("/contacts/{cid}")

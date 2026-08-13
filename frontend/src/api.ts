@@ -3,14 +3,20 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const API = process.env.EXPO_PUBLIC_BACKEND_URL;
 const TOKEN_KEY = "kd_token";
 const FARM_KEY = "kd_farm";
+const ROLE_KEY = "kd_role";
 
 async function getToken(): Promise<string | null> {
   return AsyncStorage.getItem(TOKEN_KEY);
 }
 
-export async function saveSession(token: string, farm: any) {
+export async function saveSession(token: string, farm: any, role: string = "admin") {
   await AsyncStorage.setItem(TOKEN_KEY, token);
   await AsyncStorage.setItem(FARM_KEY, JSON.stringify(farm));
+  await AsyncStorage.setItem(ROLE_KEY, role);
+}
+
+export async function getRole(): Promise<string> {
+  return (await AsyncStorage.getItem(ROLE_KEY)) || "admin";
 }
 
 export async function loadFarm(): Promise<any | null> {
@@ -21,6 +27,7 @@ export async function loadFarm(): Promise<any | null> {
 export async function clearSession() {
   await AsyncStorage.removeItem(TOKEN_KEY);
   await AsyncStorage.removeItem(FARM_KEY);
+  await AsyncStorage.removeItem(ROLE_KEY);
 }
 
 export async function hasSession(): Promise<boolean> {
@@ -80,7 +87,10 @@ export const api = {
       is_new?: boolean;
       token?: string;
       farm?: any;
+      role?: string;
     }>("/auth/verify-otp", { method: "POST", body: payload, auth: false }),
+  deliveryLogin: (payload: { mobile: string; pin: string }) =>
+    request<{ token: string; boy: any; role: string }>("/auth/delivery/login", { method: "POST", body: payload, auth: false }),
   me: () => request<{ farm: any }>("/farm/me"),
   updateSettings: (payload: { upi_id?: string; farm_name?: string }) =>
     request<{ farm: any }>("/farm/settings", { method: "PUT", body: payload }),
@@ -105,11 +115,22 @@ export const api = {
     request<any>(`/analytics/monthly${month ? `?month=${month}` : ""}`),
 
   contacts: () => request<{ contacts: any[] }>("/contacts"),
-  addContact: (payload: { name: string; mobile: string; cow_req_ltr?: number; buffalo_req_ltr?: number; cow_rate?: number; buffalo_rate?: number }) =>
+  addContact: (payload: { name: string; mobile: string; cow_req_ltr?: number; buffalo_req_ltr?: number; cow_rate?: number; buffalo_rate?: number; delivery_boy_id?: string; address?: string; lat?: number; lng?: number }) =>
     request("/contacts", { method: "POST", body: payload }),
   updateContact: (id: string, payload: any) =>
     request(`/contacts/${id}`, { method: "PUT", body: payload }),
   deleteContact: (id: string) => request(`/contacts/${id}`, { method: "DELETE" }),
+  
+  deliveryBoys: () => request<{ delivery_boys: any[] }>("/delivery-boys"),
+  addDeliveryBoy: (payload: { name: string; mobile: string; pin: string }) => request("/delivery-boys", { method: "POST", body: payload }),
+  deleteDeliveryBoy: (id: string) => request(`/delivery-boys/${id}`, { method: "DELETE" }),
+  
+  getDeliveryRoute: () => request<{ route: any[]; skips: any[]; deliveries: any[] }>("/delivery/route"),
+  markDelivery: (contact_id: string, status: string) => request("/delivery/mark", { method: "POST", body: { contact_id, status } }),
+  
+  generateInvite: () => request<{ invite_token: string }>("/invites", { method: "POST" }),
+  checkInvite: (token: string) => request<{ valid: boolean; used: boolean }>(`/invites/${token}`, { auth: false }),
+  registerCustomer: (payload: any) => request<{ success?: boolean; already_registered?: boolean }>("/invites/register", { method: "POST", body: payload, auth: false }),
   
   addSkip: (id: string, date: string, qty_skipped: number, milk_type: string = "cow") =>
     request(`/contacts/${id}/skips`, { method: "POST", body: { date, qty_skipped, milk_type } }),

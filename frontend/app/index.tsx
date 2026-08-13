@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
-import { hasSession } from "@/src/api";
+import { hasSession, getRole } from "@/src/api";
 import { colors } from "@/src/theme";
 
 export default function Index() {
@@ -10,7 +10,12 @@ export default function Index() {
   useEffect(() => {
     (async () => {
       const authed = await hasSession();
-      router.replace(authed ? "/(tabs)" : "/auth");
+      if (!authed) {
+        router.replace("/auth");
+      } else {
+        const role = await getRole();
+        router.replace(role === "delivery_boy" ? "/delivery" : "/(tabs)");
+      }
     })();
   }, [router]);
 
