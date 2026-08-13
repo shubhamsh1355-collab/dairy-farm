@@ -28,9 +28,20 @@ export default function Home() {
       const logs = m.logs || [];
       const agg = {
         produced_ltr: logs.reduce((sum: number, l: any) => sum + (l.produced_ltr || 0), 0),
+        cow_produced: logs.find((l: any) => l.milk_type === "cow")?.produced_ltr || 0,
+        buf_produced: logs.find((l: any) => l.milk_type === "buffalo")?.produced_ltr || 0,
+        
         delivered_ltr: logs.reduce((sum: number, l: any) => sum + (l.delivered_ltr || 0), 0),
+        cow_delivered: logs.find((l: any) => l.milk_type === "cow")?.delivered_ltr || 0,
+        buf_delivered: logs.find((l: any) => l.milk_type === "buffalo")?.delivered_ltr || 0,
+        
         used_for_products_ltr: logs.reduce((sum: number, l: any) => sum + (l.used_for_products_ltr || 0), 0),
+        cow_used: logs.find((l: any) => l.milk_type === "cow")?.used_for_products_ltr || 0,
+        buf_used: logs.find((l: any) => l.milk_type === "buffalo")?.used_for_products_ltr || 0,
+        
         remaining_ltr: logs.reduce((sum: number, l: any) => sum + (l.remaining_ltr || 0), 0),
+        cow_remaining: logs.find((l: any) => l.milk_type === "cow")?.remaining_ltr || 0,
+        buf_remaining: logs.find((l: any) => l.milk_type === "buffalo")?.remaining_ltr || 0,
       };
       
       setTodayLog(agg);
@@ -87,10 +98,27 @@ export default function Home() {
               <BlurView intensity={Platform.OS === 'web' ? 0 : 20} tint="dark" style={styles.heroGlass}>
                 <Text style={styles.heroTitle}>Today's Overview</Text>
                 <View style={styles.heroGrid}>
-                  <HeroMetric label="Produced" value={`${todayLog?.produced_ltr ?? 0} L`} />
-                  <HeroMetric label="Delivered" value={`${todayLog?.delivered_ltr ?? 0} L`} />
-                  <HeroMetric label="Used" value={`${todayLog?.used_for_products_ltr ?? 0} L`} />
-                  <HeroMetric label="Remaining" value={`${todayLog?.remaining_ltr ?? 0} L`} highlight />
+                  <HeroMetric 
+                    label="Produced" 
+                    value={`${todayLog?.produced_ltr ?? 0} L`} 
+                    subValue={`🐄 ${todayLog?.cow_produced ?? 0} L  ·  🐃 ${todayLog?.buf_produced ?? 0} L`}
+                  />
+                  <HeroMetric 
+                    label="Delivered" 
+                    value={`${todayLog?.delivered_ltr ?? 0} L`} 
+                    subValue={`🐄 ${todayLog?.cow_delivered ?? 0} L  ·  🐃 ${todayLog?.buf_delivered ?? 0} L`}
+                  />
+                  <HeroMetric 
+                    label="Used" 
+                    value={`${todayLog?.used_for_products_ltr ?? 0} L`} 
+                    subValue={`🐄 ${todayLog?.cow_used ?? 0} L  ·  🐃 ${todayLog?.buf_used ?? 0} L`}
+                  />
+                  <HeroMetric 
+                    label="Remaining" 
+                    value={`${todayLog?.remaining_ltr ?? 0} L`} 
+                    subValue={`🐄 ${todayLog?.cow_remaining ?? 0} L  ·  🐃 ${todayLog?.buf_remaining ?? 0} L`}
+                    highlight 
+                  />
                 </View>
               </BlurView>
             </View>
@@ -160,11 +188,14 @@ export default function Home() {
   );
 }
 
-function HeroMetric({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function HeroMetric({ label, value, highlight, subValue }: { label: string; value: string; highlight?: boolean; subValue?: string }) {
   return (
     <View style={[styles.metricCard, highlight && styles.metricCardHighlight]}>
       <Text style={[styles.metricLabel, highlight && { color: colors.brandTertiary }]}>{label}</Text>
       <Text style={[styles.metricValue, highlight && { color: "#FFFFFF" }]}>{value}</Text>
+      {subValue && (
+        <Text style={[styles.metricSub, highlight && { color: "rgba(255,255,255,0.7)" }]}>{subValue}</Text>
+      )}
     </View>
   );
 }
@@ -235,6 +266,7 @@ const styles = StyleSheet.create({
   },
   metricLabel: { fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: "500" },
   metricValue: { fontSize: 22, fontWeight: "800", color: colors.onSurfaceInverse, marginTop: 4 },
+  metricSub: { fontSize: 10, color: "rgba(255,255,255,0.6)", marginTop: 6, fontWeight: "600" },
   section: { marginBottom: spacing.xxl },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: colors.onSurface, paddingHorizontal: spacing.xl, marginBottom: spacing.md, letterSpacing: -0.5 },
   actionsGrid: {
