@@ -377,6 +377,9 @@ async def analytics(month: Optional[str] = None, farm=Depends(get_farm)):
     milk_produced = sum(l.get("produced_ltr", 0) for l in milk_logs)
     milk_delivered = sum(l.get("delivered_ltr", 0) for l in milk_logs)
     milk_used = sum(l.get("used_for_products_ltr", 0) for l in milk_logs)
+    
+    cow_logs = [l for l in milk_logs if l.get("milk_type") == "cow"]
+    buf_logs = [l for l in milk_logs if l.get("milk_type") == "buffalo"]
 
     txs = await db.product_tx.find({"farm_id": farm["id"], "month": m, "type": "sale"}, {"_id": 0}).to_list(1000)
     product_revenue = sum(t.get("amount", 0) for t in txs)
@@ -396,21 +399,34 @@ async def analytics(month: Optional[str] = None, farm=Depends(get_farm)):
     # Daily series for chart
     daily = {}
     for l in milk_logs:
-        daily.setdefault(l["date"], {"date": l["date"], "milk": 0, "products": 0})
+        daily.setdefault(l["date"], {"date": l["date"], "milk": 0, "cow_milk": 0, "buf_milk": 0, "products": 0})
         daily[l["date"]]["milk"] += l.get("revenue", 0)
+        if l.get("milk_type") == "cow":
+            daily[l["date"]]["cow_milk"] += l.get("revenue", 0)
+        elif l.get("milk_type") == "buffalo":
+            daily[l["date"]]["buf_milk"] += l.get("revenue", 0)
+            
     for t in txs:
-        daily.setdefault(t["date"], {"date": t["date"], "milk": 0, "products": 0})
+        daily.setdefault(t["date"], {"date": t["date"], "milk": 0, "cow_milk": 0, "buf_milk": 0, "products": 0})
         daily[t["date"]]["products"] += t.get("amount", 0)
     series = sorted(daily.values(), key=lambda x: x["date"])
+
+    def calc_milk_stats(logs_list):
+        rev = sum(l.get("revenue", 0) for l in logs_list)
+        return {
+            "revenue": round(rev, 2),
+            "profit": round(rev * (1 - milk_cost_rate), 2),
+            "produced_ltr": round(sum(l.get("produced_ltr", 0) for l in logs_list), 2),
+            "delivered_ltr": round(sum(l.get("delivered_ltr", 0) for l in logs_list), 2),
+            "used_for_products_ltr": round(sum(l.get("used_for_products_ltr", 0) for l in logs_list), 2),
+        }
 
     return {
         "month": m,
         "milk": {
-            "revenue": round(milk_revenue, 2),
-            "profit": round(milk_profit, 2),
-            "produced_ltr": round(milk_produced, 2),
-            "delivered_ltr": round(milk_delivered, 2),
-            "used_for_products_ltr": round(milk_used, 2),
+            "total": calc_milk_stats(milk_logs),
+            "cow": calc_milk_stats(cow_logs),
+            "buffalo": calc_milk_stats(buf_logs),
         },
         "products": {
             "revenue": round(product_revenue, 2),

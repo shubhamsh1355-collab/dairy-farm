@@ -18,6 +18,7 @@ export default function Home() {
   const [todayLog, setTodayLog] = useState<any>(null);
   const [analytics, setAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<"total" | "cow" | "buffalo">("total");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,10 +57,27 @@ export default function Home() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const series = (analytics?.series || []).slice(-14).map((s: any) => ({
-    value: s.milk,
+    value: viewMode === "total" ? s.milk : (viewMode === "cow" ? s.cow_milk : s.buf_milk),
     label: s.date.slice(8),
     frontColor: colors.brandPrimary,
   }));
+
+  let mProduced = todayLog?.produced_ltr ?? 0;
+  let mDelivered = todayLog?.delivered_ltr ?? 0;
+  let mUsed = todayLog?.used_for_products_ltr ?? 0;
+  let mRemaining = todayLog?.remaining_ltr ?? 0;
+
+  if (viewMode === "cow") {
+    mProduced = todayLog?.cow_produced ?? 0;
+    mDelivered = todayLog?.cow_delivered ?? 0;
+    mUsed = todayLog?.cow_used ?? 0;
+    mRemaining = todayLog?.cow_remaining ?? 0;
+  } else if (viewMode === "buffalo") {
+    mProduced = todayLog?.buf_produced ?? 0;
+    mDelivered = todayLog?.buf_delivered ?? 0;
+    mUsed = todayLog?.buf_used ?? 0;
+    mRemaining = todayLog?.buf_remaining ?? 0;
+  }
 
   // Max width constraint so it doesn't break on desktop
   const windowWidth = Dimensions.get("window").width;
@@ -96,29 +114,20 @@ export default function Home() {
                 style={StyleSheet.absoluteFillObject}
               />
               <BlurView intensity={Platform.OS === 'web' ? 0 : 20} tint="dark" style={styles.heroGlass}>
-                <Text style={styles.heroTitle}>Today's Overview</Text>
+                <View style={styles.heroHeader}>
+                  <Text style={styles.heroTitle}>Today's Overview</Text>
+                  <View style={styles.segment}>
+                    <SegBtn label="All" active={viewMode === "total"} onPress={() => setViewMode("total")} />
+                    <SegBtn label="Cow" active={viewMode === "cow"} onPress={() => setViewMode("cow")} />
+                    <SegBtn label="Buffalo" active={viewMode === "buffalo"} onPress={() => setViewMode("buffalo")} />
+                  </View>
+                </View>
+                
                 <View style={styles.heroGrid}>
-                  <HeroMetric 
-                    label="Produced" 
-                    value={`${todayLog?.produced_ltr ?? 0} L`} 
-                    subValue={`🐄 ${todayLog?.cow_produced ?? 0} L  ·  🐃 ${todayLog?.buf_produced ?? 0} L`}
-                  />
-                  <HeroMetric 
-                    label="Delivered" 
-                    value={`${todayLog?.delivered_ltr ?? 0} L`} 
-                    subValue={`🐄 ${todayLog?.cow_delivered ?? 0} L  ·  🐃 ${todayLog?.buf_delivered ?? 0} L`}
-                  />
-                  <HeroMetric 
-                    label="Used" 
-                    value={`${todayLog?.used_for_products_ltr ?? 0} L`} 
-                    subValue={`🐄 ${todayLog?.cow_used ?? 0} L  ·  🐃 ${todayLog?.buf_used ?? 0} L`}
-                  />
-                  <HeroMetric 
-                    label="Remaining" 
-                    value={`${todayLog?.remaining_ltr ?? 0} L`} 
-                    subValue={`🐄 ${todayLog?.cow_remaining ?? 0} L  ·  🐃 ${todayLog?.buf_remaining ?? 0} L`}
-                    highlight 
-                  />
+                  <HeroMetric label="Produced" value={`${mProduced} L`} />
+                  <HeroMetric label="Delivered" value={`${mDelivered} L`} />
+                  <HeroMetric label="Used" value={`${mUsed} L`} />
+                  <HeroMetric label="Remaining" value={`${mRemaining} L`} highlight />
                 </View>
               </BlurView>
             </View>
@@ -188,15 +197,20 @@ export default function Home() {
   );
 }
 
-function HeroMetric({ label, value, highlight, subValue }: { label: string; value: string; highlight?: boolean; subValue?: string }) {
+function HeroMetric({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <View style={[styles.metricCard, highlight && styles.metricCardHighlight]}>
       <Text style={[styles.metricLabel, highlight && { color: colors.brandTertiary }]}>{label}</Text>
       <Text style={[styles.metricValue, highlight && { color: "#FFFFFF" }]}>{value}</Text>
-      {subValue && (
-        <Text style={[styles.metricSub, highlight && { color: "rgba(255,255,255,0.7)" }]}>{subValue}</Text>
-      )}
     </View>
+  );
+}
+
+function SegBtn({ label, active, onPress }: any) {
+  return (
+    <Pressable onPress={onPress} style={[styles.segBtn, active && styles.segBtnActive]}>
+      <Text style={[styles.segText, active && styles.segTextActive]}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -246,7 +260,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: Platform.OS === 'web' ? 'rgba(0,0,0,0.3)' : 'transparent',
   },
-  heroTitle: { fontSize: 18, fontWeight: "700", color: colors.onSurfaceInverse, marginBottom: spacing.md },
+  heroHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md },
+  heroTitle: { fontSize: 18, fontWeight: "700", color: colors.onSurfaceInverse },
+  segment: { flexDirection: "row", backgroundColor: "rgba(255,255,255,0.15)", padding: 4, borderRadius: 999 },
+  segBtn: { paddingVertical: 4, paddingHorizontal: 12, borderRadius: 999 },
+  segBtnActive: { backgroundColor: "#FFFFFF" },
+  segText: { color: "rgba(255,255,255,0.7)", fontWeight: "600", fontSize: 11 },
+  segTextActive: { color: colors.brandPrimary },
   heroGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -266,7 +286,6 @@ const styles = StyleSheet.create({
   },
   metricLabel: { fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: "500" },
   metricValue: { fontSize: 22, fontWeight: "800", color: colors.onSurfaceInverse, marginTop: 4 },
-  metricSub: { fontSize: 10, color: "rgba(255,255,255,0.6)", marginTop: 6, fontWeight: "600" },
   section: { marginBottom: spacing.xxl },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: colors.onSurface, paddingHorizontal: spacing.xl, marginBottom: spacing.md, letterSpacing: -0.5 },
   actionsGrid: {

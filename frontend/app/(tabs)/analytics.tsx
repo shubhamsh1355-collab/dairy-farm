@@ -25,12 +25,24 @@ export default function Analytics() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const active = tab === "milk" ? data?.milk : data?.products;
-  const series = (data?.series || []).slice(-14).map((s: any) => ({
-    value: tab === "milk" ? s.milk : s.products,
-    label: s.date.slice(8),
-    frontColor: tab === "milk" ? colors.brandPrimary : colors.brandSecondary,
-  }));
+  const active = tab === "milk" ? data?.milk?.total : data?.products;
+  const series = (data?.series || []).slice(-14).map((s: any) => {
+    if (tab === "milk") {
+      return {
+        stacks: [
+          { value: s.cow_milk || 0, color: colors.brandPrimary },
+          { value: s.buf_milk || 0, color: colors.brandSecondary },
+        ],
+        label: s.date.slice(8),
+      };
+    } else {
+      return {
+        value: s.products || 0,
+        label: s.date.slice(8),
+        frontColor: colors.brandSecondary,
+      };
+    }
+  });
 
   const width = Dimensions.get("window").width - spacing.xl * 2;
 
@@ -67,29 +79,65 @@ export default function Analytics() {
 
             <View style={styles.chartCard}>
               <Text style={styles.chartTitle}>Daily {tab === "milk" ? "milk" : "product"} sales</Text>
-              {series.length ? (
-                <BarChart
-                  data={series}
-                  width={width - spacing.xl}
-                  height={180}
-                  barWidth={16}
-                  spacing={10}
-                  yAxisThickness={0}
-                  xAxisThickness={0}
-                  yAxisTextStyle={{ color: colors.muted, fontSize: 10 }}
-                  xAxisLabelTextStyle={{ color: colors.muted, fontSize: 10 }}
-                  noOfSections={4}
-                />
-              ) : (
-                <Text style={styles.empty}>No data yet</Text>
-              )}
+                <View>
+                  {tab === "milk" ? (
+                    <BarChart
+                      stackData={series}
+                      width={width - spacing.xl}
+                      height={180}
+                      barWidth={16}
+                      spacing={10}
+                      yAxisThickness={0}
+                      xAxisThickness={0}
+                      yAxisTextStyle={{ color: colors.muted, fontSize: 10 }}
+                      xAxisLabelTextStyle={{ color: colors.muted, fontSize: 10 }}
+                      noOfSections={4}
+                    />
+                  ) : (
+                    <BarChart
+                      data={series}
+                      width={width - spacing.xl}
+                      height={180}
+                      barWidth={16}
+                      spacing={10}
+                      yAxisThickness={0}
+                      xAxisThickness={0}
+                      yAxisTextStyle={{ color: colors.muted, fontSize: 10 }}
+                      xAxisLabelTextStyle={{ color: colors.muted, fontSize: 10 }}
+                      noOfSections={4}
+                    />
+                  )}
+                  {tab === "milk" && (
+                    <View style={styles.legendRow}>
+                      <View style={[styles.legendDot, { backgroundColor: colors.brandPrimary }]} />
+                      <Text style={styles.legendText}>Cow</Text>
+                      <View style={[styles.legendDot, { backgroundColor: colors.brandSecondary, marginLeft: 16 }]} />
+                      <Text style={styles.legendText}>Buffalo</Text>
+                    </View>
+                  )}
+                </View>
             </View>
 
             {tab === "milk" ? (
-              <View style={styles.card}>
-                <Row icon="cup-water" label="Produced" value={`${data?.milk?.produced_ltr ?? 0} L`} />
-                <Row icon="truck-delivery" label="Delivered" value={`${data?.milk?.delivered_ltr ?? 0} L`} />
-                <Row icon="factory" label="Used for products" value={`${data?.milk?.used_for_products_ltr ?? 0} L`} />
+              <View style={{ gap: spacing.md }}>
+                <View style={styles.card}>
+                  <Text style={styles.chartTitle}>Total Milk</Text>
+                  <Row icon="cup-water" label="Produced" value={`${data?.milk?.total?.produced_ltr ?? 0} L`} />
+                  <Row icon="truck-delivery" label="Delivered" value={`${data?.milk?.total?.delivered_ltr ?? 0} L`} />
+                  <Row icon="factory" label="Used for products" value={`${data?.milk?.total?.used_for_products_ltr ?? 0} L`} />
+                </View>
+                <View style={{ flexDirection: "row", gap: spacing.md }}>
+                  <View style={[styles.card, { flex: 1 }]}>
+                    <Text style={styles.chartTitle}>Cow 🐄</Text>
+                    <Row icon="cup-water" label="Produced" value={`${data?.milk?.cow?.produced_ltr ?? 0} L`} />
+                    <Row icon="truck-delivery" label="Delivered" value={`${data?.milk?.cow?.delivered_ltr ?? 0} L`} />
+                  </View>
+                  <View style={[styles.card, { flex: 1 }]}>
+                    <Text style={styles.chartTitle}>Buffalo 🐃</Text>
+                    <Row icon="cup-water" label="Produced" value={`${data?.milk?.buffalo?.produced_ltr ?? 0} L`} />
+                    <Row icon="truck-delivery" label="Delivered" value={`${data?.milk?.buffalo?.delivered_ltr ?? 0} L`} />
+                  </View>
+                </View>
               </View>
             ) : (
               <View style={styles.card}>
@@ -145,4 +193,7 @@ const styles = StyleSheet.create({
   rowLabel: { flex: 1, color: colors.onSurface, fontSize: 14 },
   rowValue: { fontWeight: "700", color: colors.onSurface, fontSize: 14 },
   empty: { color: colors.muted, textAlign: "center", padding: spacing.lg },
+  legendRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: spacing.md },
+  legendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+  legendText: { fontSize: 12, color: colors.muted, fontWeight: "500" },
 });
