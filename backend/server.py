@@ -301,20 +301,23 @@ async def get_delivery_route(boy=Depends(get_delivery_boy)):
 @api.post("/delivery/mark")
 async def mark_delivery(body: DeliveryMarkIn, boy=Depends(get_delivery_boy)):
     date = today_key()
-    if body.status == "skipped":
+    if body.status in ["skipped", "skipped_cow"]:
         contact = await db.contacts.find_one({"id": body.contact_id})
-        if contact:
-            # We skip total requested amount for simplicity for delivery boys
-            if contact.get("cow_req_ltr", 0) > 0:
-                await db.milk_skips.update_one(
-                    {"farm_id": contact["farm_id"], "contact_id": body.contact_id, "date": date, "milk_type": "cow"},
-                    {"$set": {"qty_skipped": contact.get("cow_req_ltr")}}, upsert=True
-                )
-            if contact.get("buffalo_req_ltr", 0) > 0:
-                await db.milk_skips.update_one(
-                    {"farm_id": contact["farm_id"], "contact_id": body.contact_id, "date": date, "milk_type": "buffalo"},
-                    {"$set": {"qty_skipped": contact.get("buffalo_req_ltr")}}, upsert=True
-                )
+        if contact and contact.get("cow_req_ltr", 0) > 0:
+            await db.milk_skips.update_one(
+                {"farm_id": contact["farm_id"], "contact_id": body.contact_id, "date": date, "milk_type": "cow"},
+                {"$set": {"qty_skipped": contact.get("cow_req_ltr")}}, upsert=True
+            )
+            
+    if body.status in ["skipped", "skipped_buffalo"]:
+        # If we didn't fetch contact yet
+        if body.status == "skipped_buffalo":
+            contact = await db.contacts.find_one({"id": body.contact_id})
+        if contact and contact.get("buffalo_req_ltr", 0) > 0:
+            await db.milk_skips.update_one(
+                {"farm_id": contact["farm_id"], "contact_id": body.contact_id, "date": date, "milk_type": "buffalo"},
+                {"$set": {"qty_skipped": contact.get("buffalo_req_ltr")}}, upsert=True
+            )
     
     doc = {
         "id": str(uuid.uuid4()),

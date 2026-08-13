@@ -155,13 +155,25 @@ export default function DeliveryDashboard() {
                   </View>
 
                   {!isDone ? (
-                    <View style={styles.actionRow}>
-                      <Pressable style={[styles.actionBtn, { backgroundColor: colors.error + "20" }]} onPress={() => handleAction(contact.id, "skipped")}>
-                        <Text style={[styles.actionText, { color: colors.error }]}>Skipped</Text>
-                      </Pressable>
-                      <Pressable style={[styles.actionBtn, { backgroundColor: colors.brandPrimary }]} onPress={() => handleAction(contact.id, "delivered")}>
-                        <Text style={[styles.actionText, { color: "#fff" }]}>Delivered</Text>
-                      </Pressable>
+                    <View style={{ gap: 8, marginTop: 8 }}>
+                      {(contact.cow_req_ltr > 0 && contact.buffalo_req_ltr > 0) && (
+                        <View style={styles.actionRow}>
+                          <Pressable style={[styles.actionBtn, { backgroundColor: colors.error + "20" }]} onPress={() => handleAction(contact.id, "skipped_cow")}>
+                            <Text style={[styles.actionText, { color: colors.error }]}>Skip Cow</Text>
+                          </Pressable>
+                          <Pressable style={[styles.actionBtn, { backgroundColor: colors.error + "20" }]} onPress={() => handleAction(contact.id, "skipped_buffalo")}>
+                            <Text style={[styles.actionText, { color: colors.error }]}>Skip Buffalo</Text>
+                          </Pressable>
+                        </View>
+                      )}
+                      <View style={styles.actionRow}>
+                        <Pressable style={[styles.actionBtn, { backgroundColor: colors.error + "20" }]} onPress={() => handleAction(contact.id, "skipped")}>
+                          <Text style={[styles.actionText, { color: colors.error }]}>{(contact.cow_req_ltr > 0 && contact.buffalo_req_ltr > 0) ? "Skip Both" : "Skipped"}</Text>
+                        </Pressable>
+                        <Pressable style={[styles.actionBtn, { backgroundColor: colors.brandPrimary }]} onPress={() => handleAction(contact.id, "delivered")}>
+                          <Text style={[styles.actionText, { color: "#fff" }]}>Delivered</Text>
+                        </Pressable>
+                      </View>
                     </View>
                   ) : (
                     <View style={styles.statusBox}>
@@ -170,7 +182,11 @@ export default function DeliveryDashboard() {
                         size={16} 
                         color={delivery.status === "delivered" ? colors.success : colors.error} 
                       />
-                      <Text style={styles.statusText}>Marked as {delivery.status}</Text>
+                      <Text style={styles.statusText}>
+                        {delivery.status === "skipped_cow" ? "Skipped Cow" : 
+                         delivery.status === "skipped_buffalo" ? "Skipped Buffalo" : 
+                         `Marked as ${delivery.status}`}
+                      </Text>
                     </View>
                   )}
                 </View>
