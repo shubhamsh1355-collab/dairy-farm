@@ -17,6 +17,7 @@ export default function CustomerDetail() {
   const [bill, setBill] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [date, setDate] = useState(new Date());
+  const [skipMilkType, setSkipMilkType] = useState<"cow" | "buffalo">("cow");
   const [addingSkip, setAddingSkip] = useState(false);
 
   const loadBill = useCallback(async () => {
@@ -39,14 +40,15 @@ export default function CustomerDetail() {
   );
 
   const handleAddSkip = async () => {
-    if (!bill?.contact?.daily_requirement_ltr) {
-      Alert.alert("Error", "Contact has no daily requirement set. Please update contact first.");
+    const req = skipMilkType === "cow" ? bill?.contact?.cow_req_ltr : bill?.contact?.buffalo_req_ltr;
+    if (!req) {
+      Alert.alert("Error", `Contact has no ${skipMilkType} requirement set.`);
       return;
     }
     setAddingSkip(true);
     try {
       const dateStr = dayjs(date).format("YYYY-MM-DD");
-      await api.addSkip(id as string, dateStr, bill.contact.daily_requirement_ltr);
+      await api.addSkip(id as string, dateStr, req, skipMilkType);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Success", "Skip recorded");
       loadBill();
@@ -109,8 +111,23 @@ export default function CustomerDetail() {
             <Text style={styles.billLabel}>Skipped Milk:</Text>
             <Text style={styles.billValue}>{total_skipped_ltr} L</Text>
           </View>
+          
+          <View style={styles.divider} />
+          
+          {bill.delivered_cow > 0 && (
+            <View style={styles.billRow}>
+              <Text style={styles.billLabel}>Delivered (Cow):</Text>
+              <Text style={styles.billValue}>{bill.delivered_cow} L</Text>
+            </View>
+          )}
+          {bill.delivered_buffalo > 0 && (
+            <View style={styles.billRow}>
+              <Text style={styles.billLabel}>Delivered (Buffalo):</Text>
+              <Text style={styles.billValue}>{bill.delivered_buffalo} L</Text>
+            </View>
+          )}
           <View style={styles.billRow}>
-            <Text style={styles.billLabel}>Actual Delivered:</Text>
+            <Text style={styles.billLabel}>Total Delivered:</Text>
             <Text style={styles.billValue}>{delivered_ltr} L</Text>
           </View>
           
@@ -126,6 +143,19 @@ export default function CustomerDetail() {
           <Text style={styles.sectionTitle}>Mark Skip</Text>
           <Text style={styles.skipSub}>Record a missed delivery for this customer.</Text>
           
+          <View style={styles.segmentedControl}>
+            <Pressable 
+              style={[styles.segment, skipMilkType === "cow" && styles.segmentActive]} 
+              onPress={() => { setSkipMilkType("cow"); Haptics.selectionAsync(); }}>
+              <Text style={[styles.segmentText, skipMilkType === "cow" && styles.segmentTextActive]}>🐄 Cow Milk</Text>
+            </Pressable>
+            <Pressable 
+              style={[styles.segment, skipMilkType === "buffalo" && styles.segmentActive]} 
+              onPress={() => { setSkipMilkType("buffalo"); Haptics.selectionAsync(); }}>
+              <Text style={[styles.segmentText, skipMilkType === "buffalo" && styles.segmentTextActive]}>🐃 Buffalo Milk</Text>
+            </Pressable>
+          </View>
+
           <View style={styles.dateSelector}>
             <Pressable onPress={() => setDate(dayjs(date).subtract(1, 'day').toDate())} style={styles.dateBtn}>
               <MaterialCommunityIcons name="chevron-left" size={24} color={colors.onSurface} />
@@ -221,4 +251,9 @@ const styles = StyleSheet.create({
   },
   qrSub: { fontSize: 13, color: colors.muted, marginBottom: spacing.xl },
   qrWrapper: { padding: spacing.md, backgroundColor: "#FFF", borderRadius: radius.md },
+  segmentedControl: { flexDirection: "row", backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },
+  segment: { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: radius.sm },
+  segmentActive: { backgroundColor: colors.surface, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
+  segmentText: { fontSize: 14, fontWeight: "600", color: colors.muted },
+  segmentTextActive: { color: colors.brandPrimary },
 });

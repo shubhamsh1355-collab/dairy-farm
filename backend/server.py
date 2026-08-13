@@ -68,6 +68,7 @@ class VerifyOtpIn(BaseModel):
 
 class MilkLogIn(BaseModel):
     date: Optional[str] = None  # YYYY-MM-DD; default today
+    milk_type: str = "cow"  # cow or buffalo
     produced_ltr: float
     delivered_ltr: float
     used_for_products_ltr: float = 0
@@ -93,12 +94,15 @@ class ProductSaleIn(BaseModel):
 class ContactIn(BaseModel):
     name: str
     mobile: str  # e.g. +91XXXXXXXXXX
-    daily_requirement_ltr: float = 0
-    rate_per_ltr: float = 60
+    cow_req_ltr: float = 0
+    buffalo_req_ltr: float = 0
+    cow_rate: float = 60
+    buffalo_rate: float = 70
 
 class MilkSkipIn(BaseModel):
     date: str  # YYYY-MM-DD
     qty_skipped: float
+    milk_type: str = "cow"
 
 class CowIn(BaseModel):
     tag: str
@@ -226,6 +230,7 @@ async def upsert_milk_log(body: MilkLogIn, farm=Depends(get_farm)):
         "farm_id": farm["id"],
         "date": date,
         "month": date[:7],
+        "milk_type": body.milk_type,
         "produced_ltr": body.produced_ltr,
         "delivered_ltr": body.delivered_ltr,
         "used_for_products_ltr": body.used_for_products_ltr,
@@ -235,7 +240,7 @@ async def upsert_milk_log(body: MilkLogIn, farm=Depends(get_farm)):
         "notes": body.notes,
         "updated_at": iso(now_utc()),
     }
-    existing = await db.milk_logs.find_one({"farm_id": farm["id"], "date": date}, {"_id": 0})
+    existing = await db.milk_logs.find_one({"farm_id": farm["id"], "date": date, "milk_type": body.milk_type}, {"_id": 0})
     if existing:
         doc["id"] = existing["id"]
         doc["created_at"] = existing.get("created_at", iso(now_utc()))
@@ -248,7 +253,10 @@ async def upsert_milk_log(body: MilkLogIn, farm=Depends(get_farm)):
 
 async def get_expected_delivery(farm_id: str, date: str) -> dict:
     contacts = await db.contacts.find({"farm_id": farm_id}, {"_id": 0}).to_list(500)
-    total_req = sum(float(c.get("daily_requirement_ltr", 0)) for c in contacts)
+    cow_req = sum(float(c.get("cow_req_ltr", c.get("daily_requirement_ltr", 0))) for c in contacts)
+    buffalo_req = sum(float(c.get("buffalo_req_ltr", 0)) for c in contacts)
+    total_req = cow_req + buffalo_req
+    
     skips = await db.milk_skips.find({"farm_id": farm_id, "date": date}, {"_id": 0}).to_list(500)
     total_skipped = sum(s.get("qty_skipped", 0) for s in skips)
     return {
@@ -260,9 +268,9 @@ async def get_expected_delivery(farm_id: str, date: str) -> dict:
 @api.get("/milk/today")
 async def milk_today(farm=Depends(get_farm)):
     date = today_key()
-    log = await db.milk_logs.find_one({"farm_id": farm["id"], "date": date}, {"_id": 0})
+    logs = await db.milk_logs.find({"farm_id": farm["id"], "date": date}, {"_id": 0}).to_list(10)
     expected = await get_expected_delivery(farm["id"], date)
-    return {"log": log, "expected": expected}
+    return {"log": logs[0] if logs else None, "logs": logs, "expected": expected}
 
 
 @api.get("/milk/logs")
@@ -431,8 +439,10 @@ async def add_contact(body: ContactIn, farm=Depends(get_farm)):
         "farm_id": farm["id"],
         "name": body.name.strip(),
         "mobile": body.mobile.strip(),
-        "daily_requirement_ltr": body.daily_requirement_ltr,
-        "rate_per_ltr": body.rate_per_ltr,
+        "cow_req_ltr": body.cow_req_ltr,
+        "buffalo_req_ltr": body.buffalo_req_ltr,
+        "cow_rate": body.cow_rate,
+        "buffalo_rate": body.buffalo_rate,
         "created_at": iso(now_utc()),
     }
     await db.contacts.insert_one(dict(doc))
@@ -523,8 +533,10 @@ async def update_contact(cid: str, body: ContactIn, farm=Depends(get_farm)):
     updates = {
         "name": body.name.strip(),
         "mobile": body.mobile.strip(),
-        "daily_requirement_ltr": body.daily_requirement_ltr,
-        "rate_per_ltr": body.rate_per_ltr,
+        "cow_req_ltr": body.cow_req_ltr,
+        "buffalo_req_ltr": body.buffalo_req_ltr,
+        "cow_rate": body.cow_rate,
+        "buffalo_rate": body.buffalo_rate,
     }
     res = await db.contacts.update_one({"id": cid, "farm_id": farm["id"]}, {"$set": updates})
     if res.matched_count == 0:
@@ -540,6 +552,7 @@ async def add_skip(cid: str, body: MilkSkipIn, farm=Depends(get_farm)):
         "date": body.date,
         "month": body.date[:7],
         "qty_skipped": body.qty_skipped,
+        "milk_type": body.milk_type,
         "created_at": iso(now_utc()),
     }
     await db.milk_skips.insert_one(dict(doc))
@@ -563,19 +576,28 @@ async def generate_bill(cid: str, month: str, farm=Depends(get_farm)):
     else:
         days = calendar.monthrange(y, m)[1]
         
-    daily_req = float(contact.get("daily_requirement_ltr", 0))
-    rate = float(contact.get("rate_per_ltr", 60))
+    cow_req = float(contact.get("cow_req_ltr", contact.get("daily_requirement_ltr", 0)))
+    cow_rate = float(contact.get("cow_rate", contact.get("rate_per_ltr", 60)))
+    buffalo_req = float(contact.get("buffalo_req_ltr", 0))
+    buffalo_rate = float(contact.get("buffalo_rate", 70))
     
-    expected_ltr = days * daily_req
+    expected_cow = days * cow_req
+    expected_buffalo = days * buffalo_req
+    expected_ltr = expected_cow + expected_buffalo
     
     skips = await db.milk_skips.find({"farm_id": farm["id"], "contact_id": cid, "month": month}, {"_id": 0}).to_list(100)
-    total_skipped = sum(s["qty_skipped"] for s in skips)
+    cow_skipped = sum(s.get("qty_skipped", 0) for s in skips if s.get("milk_type", "cow") == "cow")
+    buffalo_skipped = sum(s.get("qty_skipped", 0) for s in skips if s.get("milk_type") == "buffalo")
+    total_skipped = cow_skipped + buffalo_skipped
     
-    delivered_ltr = max(0.0, expected_ltr - total_skipped)
-    milk_amount = delivered_ltr * rate
+    delivered_cow = max(0.0, expected_cow - cow_skipped)
+    delivered_buffalo = max(0.0, expected_buffalo - buffalo_skipped)
+    delivered_ltr = delivered_cow + delivered_buffalo
+    
+    milk_amount = (delivered_cow * cow_rate) + (delivered_buffalo * buffalo_rate)
     
     txs = await db.product_tx.find({"farm_id": farm["id"], "contact_id": cid, "month": month, "type": "sale"}, {"_id": 0}).to_list(100)
-    product_amount = sum(t["amount"] for t in txs)
+    product_amount = sum(t.get("amount", 0) for t in txs)
     
     total_amount = milk_amount + product_amount
     
@@ -586,6 +608,8 @@ async def generate_bill(cid: str, month: str, farm=Depends(get_farm)):
         "expected_ltr": expected_ltr,
         "total_skipped_ltr": total_skipped,
         "delivered_ltr": delivered_ltr,
+        "delivered_cow": delivered_cow,
+        "delivered_buffalo": delivered_buffalo,
         "milk_amount": milk_amount,
         "products": txs,
         "product_amount": product_amount,

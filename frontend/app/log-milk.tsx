@@ -10,11 +10,23 @@ import { colors, spacing, radius } from "@/src/theme";
 export default function LogMilk() {
   const router = useRouter();
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
-  const [produced, setProduced] = useState("");
-  const [delivered, setDelivered] = useState("");
-  const [used, setUsed] = useState("");
-  const [price, setPrice] = useState("60");
-  const [notes, setNotes] = useState("");
+  
+  const [milkType, setMilkType] = useState<"cow" | "buffalo">("cow");
+  
+  // State for cow
+  const [cowProduced, setCowProduced] = useState("");
+  const [cowDelivered, setCowDelivered] = useState("");
+  const [cowUsed, setCowUsed] = useState("");
+  const [cowPrice, setCowPrice] = useState("60");
+  const [cowNotes, setCowNotes] = useState("");
+  
+  // State for buffalo
+  const [bufProduced, setBufProduced] = useState("");
+  const [bufDelivered, setBufDelivered] = useState("");
+  const [bufUsed, setBufUsed] = useState("");
+  const [bufPrice, setBufPrice] = useState("70");
+  const [bufNotes, setBufNotes] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [expectedData, setExpectedData] = useState<any>(null);
@@ -25,33 +37,50 @@ export default function LogMilk() {
       if (r?.expected) {
         setExpectedData(r.expected);
       }
-      if (r?.log) {
-        setProduced(String(r.log.produced_ltr));
-        setDelivered(String(r.log.delivered_ltr));
-        setUsed(String(r.log.used_for_products_ltr));
-        setPrice(String(r.log.price_per_ltr));
-        setNotes(r.log.notes || "");
-      } else if (r?.expected) {
-        setDelivered(String(r.expected.expected_delivered));
+      if (r?.logs) {
+        const cowLog = r.logs.find((l: any) => l.milk_type === "cow");
+        const bufLog = r.logs.find((l: any) => l.milk_type === "buffalo");
+        if (cowLog) {
+          setCowProduced(String(cowLog.produced_ltr));
+          setCowDelivered(String(cowLog.delivered_ltr));
+          setCowUsed(String(cowLog.used_for_products_ltr));
+          setCowPrice(String(cowLog.price_per_ltr));
+          setCowNotes(cowLog.notes || "");
+        }
+        if (bufLog) {
+          setBufProduced(String(bufLog.produced_ltr));
+          setBufDelivered(String(bufLog.delivered_ltr));
+          setBufUsed(String(bufLog.used_for_products_ltr));
+          setBufPrice(String(bufLog.price_per_ltr));
+          setBufNotes(bufLog.notes || "");
+        }
       }
     })();
   }, []);
 
-  const p = Number(produced) || 0;
-  const d = Number(delivered) || 0;
-  const u = Number(used) || 0;
+  const isCow = milkType === "cow";
+  
+  const p = Number(isCow ? cowProduced : bufProduced) || 0;
+  const d = Number(isCow ? cowDelivered : bufDelivered) || 0;
+  const u = Number(isCow ? cowUsed : bufUsed) || 0;
+  const price = isCow ? cowPrice : bufPrice;
   const remaining = p - d - u;
 
   const save = async () => {
     setErr("");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { setErr("Date must be in YYYY-MM-DD format"); return; }
-    if (p <= 0) { setErr("Produced quantity required"); return; }
+    if (p <= 0) { setErr(`Produced quantity required for ${milkType}`); return; }
     if (d + u > p) { setErr("Delivered + used cannot exceed produced"); return; }
     setLoading(true);
     try {
       await api.logMilk({
-        date, produced_ltr: p, delivered_ltr: d, used_for_products_ltr: u,
-        price_per_ltr: Number(price) || 0, notes,
+        date, 
+        milk_type: milkType,
+        produced_ltr: p, 
+        delivered_ltr: d, 
+        used_for_products_ltr: u,
+        price_per_ltr: Number(price) || 0, 
+        notes: isCow ? cowNotes : bufNotes,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
@@ -68,6 +97,19 @@ export default function LogMilk() {
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.xl, gap: spacing.md }} keyboardShouldPersistTaps="handled">
           
+          <View style={styles.segmentedControl}>
+            <Pressable 
+              style={[styles.segment, isCow && styles.segmentActive]} 
+              onPress={() => { setMilkType("cow"); Haptics.selectionAsync(); }}>
+              <Text style={[styles.segmentText, isCow && styles.segmentTextActive]}>🐄 Cow Milk</Text>
+            </Pressable>
+            <Pressable 
+              style={[styles.segment, !isCow && styles.segmentActive]} 
+              onPress={() => { setMilkType("buffalo"); Haptics.selectionAsync(); }}>
+              <Text style={[styles.segmentText, !isCow && styles.segmentTextActive]}>🐃 Buffalo Milk</Text>
+            </Pressable>
+          </View>
+
           <View>
             <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
             <View style={styles.inputWrap}>
@@ -80,17 +122,15 @@ export default function LogMilk() {
             <View style={styles.expectedCard}>
               <MaterialCommunityIcons name="information" size={16} color={colors.brandPrimary} />
               <Text style={styles.expectedText}>
-                Customer Requirement: {expectedData.total_req}L{"\n"}
-                Skips Logged: {expectedData.total_skipped}L{"\n"}
-                <Text style={{fontWeight:"700"}}>Expected Delivery: {expectedData.expected_delivered}L</Text>
+                Total Expected Delivery (Both Types): {expectedData.expected_delivered}L
               </Text>
             </View>
           )}
 
-          <Field testID="input-produced" icon="cup-water" label="Produced (Litres)" value={produced} onChange={setProduced} />
-          <Field testID="input-delivered" icon="truck-delivery" label="Delivered (Litres)" value={delivered} onChange={setDelivered} />
-          <Field testID="input-used" icon="factory" label="Used for dairy products (Litres)" value={used} onChange={setUsed} />
-          <Field testID="input-price" icon="currency-inr" label="Price per litre (₹)" value={price} onChange={setPrice} />
+          <Field testID="input-produced" icon="cup-water" label="Produced (Litres)" value={isCow ? cowProduced : bufProduced} onChange={isCow ? setCowProduced : setBufProduced} />
+          <Field testID="input-delivered" icon="truck-delivery" label="Delivered (Litres)" value={isCow ? cowDelivered : bufDelivered} onChange={isCow ? setCowDelivered : setBufDelivered} />
+          <Field testID="input-used" icon="factory" label="Used for dairy products (Litres)" value={isCow ? cowUsed : bufUsed} onChange={isCow ? setCowUsed : setBufUsed} />
+          <Field testID="input-price" icon="currency-inr" label="Price per litre (₹)" value={isCow ? cowPrice : bufPrice} onChange={isCow ? setCowPrice : setBufPrice} />
 
           <View style={styles.summary}>
             <Text style={styles.summaryLabel}>Remaining at end of day</Text>
@@ -101,12 +141,12 @@ export default function LogMilk() {
           </View>
 
           <Text style={styles.label}>Notes (optional)</Text>
-          <TextInput testID="input-notes" value={notes} onChangeText={setNotes} placeholder="Any notes..." placeholderTextColor={colors.muted} multiline style={[styles.input, { minHeight: 70, textAlignVertical: "top", paddingTop: spacing.md }]} />
+          <TextInput testID="input-notes" value={isCow ? cowNotes : bufNotes} onChangeText={isCow ? setCowNotes : setBufNotes} placeholder="Any notes..." placeholderTextColor={colors.muted} multiline style={[styles.input, { minHeight: 70, textAlignVertical: "top", paddingTop: spacing.md }]} />
 
           {!!err && <Text style={styles.err}>{err}</Text>}
 
           <Pressable testID="save-milk-log" style={styles.cta} onPress={save} disabled={loading}>
-            {loading ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.ctaText}>Save log</Text>}
+            {loading ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.ctaText}>Save {milkType} log</Text>}
           </Pressable>
           <View style={{ height: spacing.xxl }} />
         </ScrollView>
@@ -143,4 +183,9 @@ const styles = StyleSheet.create({
   err: { color: colors.error, fontSize: 13 },
   expectedCard: { flexDirection: "row", backgroundColor: "rgba(39, 92, 59, 0.1)", padding: spacing.md, borderRadius: radius.md, gap: spacing.sm, alignItems: "flex-start" },
   expectedText: { color: colors.brandPrimary, fontSize: 13, lineHeight: 20 },
+  segmentedControl: { flexDirection: "row", backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: 4, marginBottom: spacing.sm },
+  segment: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: radius.sm },
+  segmentActive: { backgroundColor: colors.surface, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
+  segmentText: { fontSize: 14, fontWeight: "600", color: colors.muted },
+  segmentTextActive: { color: colors.brandPrimary },
 });

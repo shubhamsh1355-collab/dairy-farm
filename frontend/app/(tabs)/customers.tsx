@@ -8,7 +8,7 @@ import * as Haptics from "expo-haptics";
 import { api } from "@/src/api";
 import { colors, spacing, radius, shadow } from "@/src/theme";
 
-type Contact = { id: string; name: string; mobile: string; daily_requirement_ltr?: number; rate_per_ltr?: number };
+type Contact = { id: string; name: string; mobile: string; cow_req_ltr?: number; buffalo_req_ltr?: number; cow_rate?: number; buffalo_rate?: number; };
 
 export default function Customers() {
   const router = useRouter();
@@ -19,8 +19,10 @@ export default function Customers() {
   const [sending, setSending] = useState(false);
   const [newContactName, setNewContactName] = useState("");
   const [newContactMobile, setNewContactMobile] = useState("");
-  const [newContactReq, setNewContactReq] = useState("");
-  const [newContactRate, setNewContactRate] = useState("");
+  const [newContactCowReq, setNewContactCowReq] = useState("");
+  const [newContactCowRate, setNewContactCowRate] = useState("60");
+  const [newContactBufReq, setNewContactBufReq] = useState("");
+  const [newContactBufRate, setNewContactBufRate] = useState("70");
   const [isAddingContact, setIsAddingContact] = useState(false);
 
   const loadContacts = useCallback(async () => {
@@ -87,13 +89,15 @@ export default function Customers() {
       await api.addContact({
         name: newContactName,
         mobile: newContactMobile,
-        daily_requirement_ltr: newContactReq ? parseFloat(newContactReq) : undefined,
-        rate_per_ltr: newContactRate ? parseFloat(newContactRate) : undefined,
+        cow_req_ltr: newContactCowReq ? parseFloat(newContactCowReq) : 0,
+        buffalo_req_ltr: newContactBufReq ? parseFloat(newContactBufReq) : 0,
+        cow_rate: newContactCowRate ? parseFloat(newContactCowRate) : 60,
+        buffalo_rate: newContactBufRate ? parseFloat(newContactBufRate) : 70,
       });
       setNewContactName("");
       setNewContactMobile("");
-      setNewContactReq("");
-      setNewContactRate("");
+      setNewContactCowReq("");
+      setNewContactBufReq("");
       setIsAddingContact(false);
       loadContacts();
     } catch (e: any) {
@@ -133,18 +137,36 @@ export default function Customers() {
           />
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
             <TextInput
-              placeholder="Daily Req (L)"
+              placeholder="Cow Milk Req (L)"
               placeholderTextColor={colors.muted}
-              value={newContactReq}
-              onChangeText={setNewContactReq}
+              value={newContactCowReq}
+              onChangeText={setNewContactCowReq}
               keyboardType="numeric"
               style={[styles.input, { flex: 1 }]}
             />
             <TextInput
-              placeholder="Rate (₹/L)"
+              placeholder="Cow Rate (₹)"
               placeholderTextColor={colors.muted}
-              value={newContactRate}
-              onChangeText={setNewContactRate}
+              value={newContactCowRate}
+              onChangeText={setNewContactCowRate}
+              keyboardType="numeric"
+              style={[styles.input, { flex: 1 }]}
+            />
+          </View>
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <TextInput
+              placeholder="Buffalo Milk Req (L)"
+              placeholderTextColor={colors.muted}
+              value={newContactBufReq}
+              onChangeText={setNewContactBufReq}
+              keyboardType="numeric"
+              style={[styles.input, { flex: 1 }]}
+            />
+            <TextInput
+              placeholder="Buffalo Rate (₹)"
+              placeholderTextColor={colors.muted}
+              value={newContactBufRate}
+              onChangeText={setNewContactBufRate}
               keyboardType="numeric"
               style={[styles.input, { flex: 1 }]}
             />
@@ -198,9 +220,12 @@ export default function Customers() {
                   <Text style={styles.contactName}>{item.name}</Text>
                   <Text style={styles.contactMobile}>{item.mobile}</Text>
                 </View>
-                {!!item.daily_requirement_ltr && (
+                {(!!item.cow_req_ltr || !!item.buffalo_req_ltr) && (
                   <View style={styles.reqBadge}>
-                    <Text style={styles.reqBadgeText}>{item.daily_requirement_ltr}L daily</Text>
+                    <Text style={styles.reqBadgeText}>
+                      {item.cow_req_ltr ? `${item.cow_req_ltr}L 🐄 ` : ""}
+                      {item.buffalo_req_ltr ? `${item.buffalo_req_ltr}L 🐃` : ""}
+                    </Text>
                   </View>
                 )}
                 <MaterialCommunityIcons name="chevron-right" size={20} color={colors.muted} style={{ marginLeft: spacing.sm }} />

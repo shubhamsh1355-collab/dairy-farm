@@ -24,7 +24,16 @@ export default function Home() {
     try {
       const [f, m, a] = await Promise.all([loadFarm(), api.todayMilk(), api.analytics()]);
       setFarm(f);
-      setTodayLog(m.log);
+      
+      const logs = m.logs || [];
+      const agg = {
+        produced_ltr: logs.reduce((sum: number, l: any) => sum + (l.produced_ltr || 0), 0),
+        delivered_ltr: logs.reduce((sum: number, l: any) => sum + (l.delivered_ltr || 0), 0),
+        used_for_products_ltr: logs.reduce((sum: number, l: any) => sum + (l.used_for_products_ltr || 0), 0),
+        remaining_ltr: logs.reduce((sum: number, l: any) => sum + (l.remaining_ltr || 0), 0),
+      };
+      
+      setTodayLog(agg);
       setAnalytics(a);
     } catch (e) {
       console.error(e);

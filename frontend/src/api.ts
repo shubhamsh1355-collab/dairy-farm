@@ -85,7 +85,7 @@ export const api = {
   updateSettings: (payload: { upi_id?: string; farm_name?: string }) =>
     request<{ farm: any }>("/farm/settings", { method: "PUT", body: payload }),
 
-  todayMilk: () => request<{ log: any; expected: any }>("/milk/today"),
+  todayMilk: () => request<{ log: any; logs: any[]; expected: any }>("/milk/today"),
   logMilk: (payload: any) => request<{ log: any }>("/milk/log", { method: "POST", body: payload }),
   milkLogs: (month?: string) =>
     request<{ logs: any[] }>(`/milk/logs${month ? `?month=${month}` : ""}`),
@@ -105,14 +105,14 @@ export const api = {
     request<any>(`/analytics/monthly${month ? `?month=${month}` : ""}`),
 
   contacts: () => request<{ contacts: any[] }>("/contacts"),
-  addContact: (payload: { name: string; mobile: string; daily_requirement_ltr?: number; rate_per_ltr?: number }) =>
+  addContact: (payload: { name: string; mobile: string; cow_req_ltr?: number; buffalo_req_ltr?: number; cow_rate?: number; buffalo_rate?: number }) =>
     request("/contacts", { method: "POST", body: payload }),
   updateContact: (id: string, payload: any) =>
     request(`/contacts/${id}`, { method: "PUT", body: payload }),
   deleteContact: (id: string) => request(`/contacts/${id}`, { method: "DELETE" }),
   
-  addSkip: (id: string, date: string, qty_skipped: number) =>
-    request(`/contacts/${id}/skips`, { method: "POST", body: { date, qty_skipped } }),
+  addSkip: (id: string, date: string, qty_skipped: number, milk_type: string = "cow") =>
+    request(`/contacts/${id}/skips`, { method: "POST", body: { date, qty_skipped, milk_type } }),
   getSkips: (id: string, month: string) => request<{ skips: any[] }>(`/contacts/${id}/skips?month=${month}`),
   generateBill: (id: string, month: string) => request<any>(`/contacts/${id}/bill?month=${month}`),
 
