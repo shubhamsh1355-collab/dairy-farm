@@ -91,6 +91,28 @@ export default function CustomerDetail() {
   const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const blanks = Array.from({ length: startDay }, (_, i) => i);
 
+  const handleDeleteContact = () => {
+    Alert.alert(
+      "Delete Customer",
+      "Are you sure you want to delete this customer? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive", 
+          onPress: async () => {
+            try {
+              await api.deleteContact(id as string);
+              router.back();
+            } catch (e: any) {
+              Alert.alert("Error", e.message || "Failed to delete customer");
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const handleDatePress = (dateStr: string) => {
     setSelectedCalDate(dateStr);
     const skip = skipsMap[dateStr];
@@ -102,12 +124,9 @@ export default function CustomerDetail() {
     if (!selectedCalDate) return;
     setAddingSkip(true);
     try {
-      if (bill?.contact?.cow_req_ltr > 0) {
-        await api.addSkip(id as string, selectedCalDate, parseFloat(editSkipCow) || 0, "cow");
-      }
-      if (bill?.contact?.buffalo_req_ltr > 0) {
-        await api.addSkip(id as string, selectedCalDate, parseFloat(editSkipBuf) || 0, "buffalo");
-      }
+      // Regardless of requirement, if Admin enters a value, we should upsert it.
+      await api.addSkip(id as string, selectedCalDate, parseFloat(editSkipCow) || 0, "cow");
+      await api.addSkip(id as string, selectedCalDate, parseFloat(editSkipBuf) || 0, "buffalo");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert("Success", "Skip updated successfully");
       loadBill();
@@ -152,7 +171,13 @@ export default function CustomerDetail() {
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{contact.name}</Text>
           <Text style={styles.sub}>{contact.mobile}</Text>
+          {contact.created_at && (
+            <Text style={{ fontSize: 12, color: colors.muted, marginTop: 2 }}>Joined {dayjs(contact.created_at).format("DD MMM YYYY")}</Text>
+          )}
         </View>
+        <Pressable style={styles.waBtn} onPress={handleDeleteContact}>
+          <MaterialCommunityIcons name="trash-can-outline" size={24} color={colors.error} />
+        </Pressable>
         <Pressable style={styles.waBtn} onPress={handleEditOpen}>
           <MaterialCommunityIcons name="pencil" size={24} color={colors.brandPrimary} />
         </Pressable>
@@ -255,10 +280,17 @@ export default function CustomerDetail() {
               const skip = skipsMap[dateStr];
               
               let dotColor = colors.success; 
+              
               const isFuture = dayjs(dateStr).isAfter(dayjs(), 'day');
               
-              if (isFuture) {
-                dotColor = colors.border;
+              // Only consider them "joined" if they have a created_at date
+              let isBeforeJoined = false;
+              if (bill?.contact?.created_at) {
+                 isBeforeJoined = dayjs(dateStr).isBefore(dayjs(bill.contact.created_at), 'day');
+              }
+              
+              if (isFuture || isBeforeJoined) {
+                dotColor = "transparent"; // No delivery expected before they joined or in the future
               } else if (skip) {
                 const cowReq = bill?.contact?.cow_req_ltr || 0;
                 const bufReq = bill?.contact?.buffalo_req_ltr || 0;
