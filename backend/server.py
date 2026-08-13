@@ -294,11 +294,16 @@ async def delete_delivery_boy(boy_id: str, farm=Depends(get_farm)):
 @api.get("/delivery/route")
 async def get_delivery_route(boy=Depends(get_delivery_boy)):
     contacts = await db.contacts.find({"delivery_boy_id": boy["id"]}, {"_id": 0}).to_list(1000)
+    
+    total_cow_req = sum(c.get("cow_req_ltr", 0) for c in contacts)
+    total_buffalo_req = sum(c.get("buffalo_req_ltr", 0) for c in contacts)
+    target_load = {"cow": total_cow_req, "buffalo": total_buffalo_req}
+    
     # also fetch today's delivery status for each
     date = today_key()
     skips = await db.milk_skips.find({"date": date}, {"_id": 0}).to_list(1000)
     deliveries = await db.deliveries.find({"date": date, "delivery_boy_id": boy["id"]}, {"_id": 0}).to_list(1000)
-    return {"route": contacts, "skips": skips, "deliveries": deliveries}
+    return {"route": contacts, "skips": skips, "deliveries": deliveries, "target_load": target_load}
 
 @api.post("/delivery/mark")
 async def mark_delivery(body: DeliveryMarkIn, boy=Depends(get_delivery_boy)):

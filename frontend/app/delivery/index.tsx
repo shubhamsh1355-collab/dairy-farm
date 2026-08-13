@@ -106,24 +106,36 @@ export default function DeliveryDashboard() {
           <ActivityIndicator color={colors.brandPrimary} />
         ) : (
           <>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryTitle}>Live Inventory</Text>
-              <View style={styles.summaryGrid}>
-                <View style={styles.sumBox}>
-                  <Text style={styles.sumVal}>{totalCow}L / {totalBuf}L</Text>
-                  <Text style={styles.sumLbl}>Total Assigned</Text>
+            <View style={[styles.summaryCard, { backgroundColor: colors.surfaceSecondary, borderWidth: 2, borderColor: colors.brandPrimary, marginBottom: spacing.lg }]}>
+              <Text style={[styles.summaryTitle, { textAlign: 'center', fontSize: 18, marginBottom: 8 }]}>TARGET LOAD FOR ROUTE</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' }}>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: 32, fontWeight: '800', color: colors.onSurface }}>{data?.target_load?.cow || 0}<Text style={{ fontSize: 16 }}>L</Text></Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.muted }}>🐄 COW</Text>
                 </View>
+                <View style={{ width: 1, height: 40, backgroundColor: colors.border }} />
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: 32, fontWeight: '800', color: colors.onSurface }}>{data?.target_load?.buffalo || 0}<Text style={{ fontSize: 16 }}>L</Text></Text>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.muted }}>🐃 BUFFALO</Text>
+                </View>
+              </View>
+              <Text style={{ textAlign: 'center', fontSize: 12, color: colors.muted, marginTop: 12 }}>Ensure you load this exact amount before leaving the farm.</Text>
+            </View>
+
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryTitle}>Live Progress</Text>
+              <View style={styles.summaryGrid}>
                 <View style={styles.sumBox}>
                   <Text style={[styles.sumVal, { color: colors.success }]}>{deliveredCow}L / {deliveredBuf}L</Text>
                   <Text style={styles.sumLbl}>Delivered</Text>
                 </View>
                 <View style={[styles.sumBox, { backgroundColor: colors.surfaceTertiary }]}>
                   <Text style={[styles.sumVal, { color: colors.brandSecondary }]}>{leftoverCow}L / {leftoverBuf}L</Text>
-                  <Text style={styles.sumLbl}>Pending</Text>
+                  <Text style={styles.sumLbl}>Pending Drop</Text>
                 </View>
                 <View style={styles.sumBox}>
                   <Text style={[styles.sumVal, { color: colors.error }]}>{skippedCow}L / {skippedBuf}L</Text>
-                  <Text style={styles.sumLbl}>Skipped (Return)</Text>
+                  <Text style={styles.sumLbl}>Return to Farm</Text>
                 </View>
               </View>
             </View>
