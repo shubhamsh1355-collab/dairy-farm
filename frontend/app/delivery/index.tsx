@@ -28,8 +28,8 @@ export default function DeliveryDashboard() {
     try {
       await api.markDelivery(contactId, status);
       await load(); // Reload to reflect changes
-    } catch (e) {
-      alert("Failed to mark delivery");
+    } catch (e: any) {
+      alert(e.message || "Failed to mark delivery");
     }
   }
 

@@ -313,39 +313,92 @@ async def get_delivery_route(boy=Depends(get_delivery_boy)):
 @api.post("/delivery/mark")
 async def mark_delivery(body: DeliveryMarkIn, boy=Depends(get_delivery_boy)):
     date = today_key()
-    if body.status in ["skipped", "skipped_cow"]:
-        contact = await db.contacts.find_one({"id": body.contact_id})
-        if contact and contact.get("cow_req_ltr", 0) > 0:
-            await db.milk_skips.update_one(
-                {"farm_id": contact["farm_id"], "contact_id": body.contact_id, "date": date, "milk_type": "cow"},
-                {"$set": {"qty_skipped": contact.get("cow_req_ltr")}}, upsert=True
-            )
-            
-    if body.status in ["skipped", "skipped_buffalo"]:
-        # If we didn't fetch contact yet
-        if body.status == "skipped_buffalo":
-            contact = await db.contacts.find_one({"id": body.contact_id})
-        if contact and contact.get("buffalo_req_ltr", 0) > 0:
-            await db.milk_skips.update_one(
-                {"farm_id": contact["farm_id"], "contact_id": body.contact_id, "date": date, "milk_type": "buffalo"},
-                {"$set": {"qty_skipped": contact.get("buffalo_req_ltr")}}, upsert=True
-            )
-            
-    if body.status == "partial":
-        if body.skipped_cow_qty and body.skipped_cow_qty > 0:
-            await db.milk_skips.update_one(
-                {"farm_id": boy["farm_id"], "contact_id": body.contact_id, "date": date, "milk_type": "cow"},
-                {"$set": {"qty_skipped": body.skipped_cow_qty}}, upsert=True
-            )
-        if body.skipped_buffalo_qty and body.skipped_buffalo_qty > 0:
-            await db.milk_skips.update_one(
-                {"farm_id": boy["farm_id"], "contact_id": body.contact_id, "date": date, "milk_type": "buffalo"},
-                {"$set": {"qty_skipped": body.skipped_buffalo_qty}}, upsert=True
-            )
+    contact = await db.contacts.find_one({"id": body.contact_id})
+    if not contact:
+        raise HTTPException(404, "Contact not found")
+        
+    farm_id = boy["farm_id"]
     
+    # 1. Determine the OLD delivered amounts
+    old_delivery = await db.deliveries.find_one({"contact_id": body.contact_id, "date": date})
+    old_skips = await db.milk_skips.find({"contact_id": body.contact_id, "date": date}).to_list(100)
+    
+    old_cow_del = 0
+    old_buf_del = 0
+    
+    if old_delivery:
+        old_cow_skip = next((s["qty_skipped"] for s in old_skips if s["milk_type"] == "cow"), 0)
+        old_buf_skip = next((s["qty_skipped"] for s in old_skips if s["milk_type"] == "buffalo"), 0)
+        
+        if old_delivery["status"] == "delivered":
+            old_cow_del = contact.get("cow_req_ltr", 0)
+            old_buf_del = contact.get("buffalo_req_ltr", 0)
+        elif old_delivery["status"] == "partial":
+            old_cow_del = max(0, contact.get("cow_req_ltr", 0) - old_cow_skip)
+            old_buf_del = max(0, contact.get("buffalo_req_ltr", 0) - old_buf_skip)
+        elif old_delivery["status"] == "skipped_cow":
+            old_buf_del = contact.get("buffalo_req_ltr", 0)
+        elif old_delivery["status"] == "skipped_buffalo":
+            old_cow_del = contact.get("cow_req_ltr", 0)
+            
+    # 2. Determine the NEW delivered amounts
+    new_cow_del = 0
+    new_buf_del = 0
+    new_cow_skip = 0
+    new_buf_skip = 0
+    
+    if body.status == "delivered":
+        new_cow_del = contact.get("cow_req_ltr", 0)
+        new_buf_del = contact.get("buffalo_req_ltr", 0)
+    elif body.status == "partial":
+        new_cow_skip = body.skipped_cow_qty or 0
+        new_buf_skip = body.skipped_buffalo_qty or 0
+        new_cow_del = max(0, contact.get("cow_req_ltr", 0) - new_cow_skip)
+        new_buf_del = max(0, contact.get("buffalo_req_ltr", 0) - new_buf_skip)
+    elif body.status == "skipped_cow":
+        new_cow_skip = contact.get("cow_req_ltr", 0)
+        new_buf_del = contact.get("buffalo_req_ltr", 0)
+    elif body.status == "skipped_buffalo":
+        new_buf_skip = contact.get("buffalo_req_ltr", 0)
+        new_cow_del = contact.get("cow_req_ltr", 0)
+    elif body.status == "skipped":
+        new_cow_skip = contact.get("cow_req_ltr", 0)
+        new_buf_skip = contact.get("buffalo_req_ltr", 0)
+        
+    diff_cow = new_cow_del - old_cow_del
+    diff_buf = new_buf_del - old_buf_del
+    
+    # 3. Check inventory if we need more milk (diff > 0)
+    if diff_cow > 0 or diff_buf > 0:
+        inv = await db.farm_inventory.find_one({"farm_id": farm_id})
+        if not inv:
+            raise HTTPException(400, "Farm inventory not initialized. Please log production first.")
+            
+        if diff_cow > 0 and inv.get("cow_stock_ltr", 0) < diff_cow:
+            raise HTTPException(400, f"Not enough Cow Milk in tank! Need {diff_cow}L more for this delivery, but only have {inv.get('cow_stock_ltr', 0)}L.")
+            
+        if diff_buf > 0 and inv.get("buffalo_stock_ltr", 0) < diff_buf:
+            raise HTTPException(400, f"Not enough Buffalo Milk in tank! Need {diff_buf}L more for this delivery, but only have {inv.get('buffalo_stock_ltr', 0)}L.")
+            
+    # 4. Update Inventory
+    if diff_cow != 0 or diff_buf != 0:
+        await db.farm_inventory.update_one(
+            {"farm_id": farm_id},
+            {"$inc": {"cow_stock_ltr": -diff_cow, "buffalo_stock_ltr": -diff_buf}},
+            upsert=True
+        )
+        
+    # 5. Update Skips and Deliveries
+    await db.milk_skips.delete_many({"contact_id": body.contact_id, "date": date})
+    
+    if new_cow_skip > 0:
+        await db.milk_skips.insert_one({"farm_id": farm_id, "contact_id": body.contact_id, "date": date, "milk_type": "cow", "qty_skipped": new_cow_skip})
+    if new_buf_skip > 0:
+        await db.milk_skips.insert_one({"farm_id": farm_id, "contact_id": body.contact_id, "date": date, "milk_type": "buffalo", "qty_skipped": new_buf_skip})
+        
     doc = {
         "id": str(uuid.uuid4()),
-        "farm_id": boy["farm_id"],
+        "farm_id": farm_id,
         "delivery_boy_id": boy["id"],
         "contact_id": body.contact_id,
         "date": date,
@@ -353,7 +406,7 @@ async def mark_delivery(body: DeliveryMarkIn, boy=Depends(get_delivery_boy)):
         "created_at": iso(now_utc())
     }
     await db.deliveries.update_one(
-        {"delivery_boy_id": boy["id"], "contact_id": body.contact_id, "date": date},
+        {"contact_id": body.contact_id, "date": date},
         {"$set": doc}, upsert=True
     )
     return {"status": "ok"}
