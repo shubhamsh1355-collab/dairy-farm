@@ -138,64 +138,105 @@ export default function DeliveryDashboard() {
             
             {(data?.route || []).map((contact: any) => {
               const delivery = data?.deliveries?.find((d: any) => d.contact_id === contact.id);
-              const isDone = !!delivery;
-              return (
-                <View key={contact.id} style={[styles.contactCard, isDone && styles.contactCardDone]}>
-                  <View style={styles.contactHeader}>
-                    <Text style={[styles.contactName, isDone && styles.textDone]}>{contact.name}</Text>
-                    <Text style={[styles.contactAddress, isDone && styles.textDone]}>{contact.address || contact.mobile}</Text>
-                  </View>
-                  <View style={styles.reqRow}>
-                    <View style={styles.reqPill}>
-                      <Text style={[styles.reqText, isDone && styles.textDone]}>🐄 {contact.cow_req_ltr || 0} L</Text>
-                    </View>
-                    <View style={styles.reqPill}>
-                      <Text style={[styles.reqText, isDone && styles.textDone]}>🐃 {contact.buffalo_req_ltr || 0} L</Text>
-                    </View>
-                  </View>
-
-                  {!isDone ? (
-                    <View style={{ gap: 8, marginTop: 8 }}>
-                      {(contact.cow_req_ltr > 0 && contact.buffalo_req_ltr > 0) && (
-                        <View style={styles.actionRow}>
-                          <Pressable style={[styles.actionBtn, { backgroundColor: colors.error + "20" }]} onPress={() => handleAction(contact.id, "skipped_cow")}>
-                            <Text style={[styles.actionText, { color: colors.error }]}>Skip Cow</Text>
-                          </Pressable>
-                          <Pressable style={[styles.actionBtn, { backgroundColor: colors.error + "20" }]} onPress={() => handleAction(contact.id, "skipped_buffalo")}>
-                            <Text style={[styles.actionText, { color: colors.error }]}>Skip Buffalo</Text>
-                          </Pressable>
-                        </View>
-                      )}
-                      <View style={styles.actionRow}>
-                        <Pressable style={[styles.actionBtn, { backgroundColor: colors.error + "20" }]} onPress={() => handleAction(contact.id, "skipped")}>
-                          <Text style={[styles.actionText, { color: colors.error }]}>{(contact.cow_req_ltr > 0 && contact.buffalo_req_ltr > 0) ? "Skip Both" : "Skipped"}</Text>
-                        </Pressable>
-                        <Pressable style={[styles.actionBtn, { backgroundColor: colors.brandPrimary }]} onPress={() => handleAction(contact.id, "delivered")}>
-                          <Text style={[styles.actionText, { color: "#fff" }]}>Delivered</Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                  ) : (
-                    <View style={styles.statusBox}>
-                      <MaterialCommunityIcons 
-                        name={delivery.status === "delivered" ? "check-circle" : "close-circle"} 
-                        size={16} 
-                        color={delivery.status === "delivered" ? colors.success : colors.error} 
-                      />
-                      <Text style={styles.statusText}>
-                        {delivery.status === "skipped_cow" ? "Skipped Cow" : 
-                         delivery.status === "skipped_buffalo" ? "Skipped Buffalo" : 
-                         `Marked as ${delivery.status}`}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              );
+              return <DeliveryCard key={contact.id} contact={contact} delivery={delivery} onAction={handleAction} />;
             })}
           </>
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function DeliveryCard({ contact, delivery, onAction }: any) {
+  const isDone = !!delivery;
+  const hasBoth = contact.cow_req_ltr > 0 && contact.buffalo_req_ltr > 0;
+  const [showPartial, setShowPartial] = useState(false);
+  const [skipCow, setSkipCow] = useState(contact.cow_req_ltr > 0 ? String(contact.cow_req_ltr) : "0");
+  const [skipBuf, setSkipBuf] = useState(contact.buffalo_req_ltr > 0 ? String(contact.buffalo_req_ltr) : "0");
+
+  return (
+    <View style={[styles.contactCard, isDone && styles.contactCardDone]}>
+      <View style={styles.contactHeader}>
+        <Text style={[styles.contactName, isDone && styles.textDone]}>{contact.name}</Text>
+        <Text style={[styles.contactAddress, isDone && styles.textDone]}>{contact.address || contact.mobile}</Text>
+      </View>
+      <View style={styles.reqRow}>
+        <View style={styles.reqPill}>
+          <Text style={[styles.reqText, isDone && styles.textDone]}>🐄 {contact.cow_req_ltr || 0} L</Text>
+        </View>
+        <View style={styles.reqPill}>
+          <Text style={[styles.reqText, isDone && styles.textDone]}>🐃 {contact.buffalo_req_ltr || 0} L</Text>
+        </View>
+      </View>
+
+      {!isDone ? (
+        <View style={{ gap: 8, marginTop: 8 }}>
+          {showPartial ? (
+            <View style={styles.partialBox}>
+              <Text style={{ fontSize: 13, fontWeight: "600", marginBottom: 8, color: colors.onSurface }}>Record Skipped Amount:</Text>
+              {contact.cow_req_ltr > 0 && (
+                <View style={styles.partialInputRow}>
+                  <Text style={styles.partialLabel}>Cow (L)</Text>
+                  <TextInput value={skipCow} onChangeText={setSkipCow} style={styles.partialInput} keyboardType="decimal-pad" selectTextOnFocus />
+                </View>
+              )}
+              {contact.buffalo_req_ltr > 0 && (
+                <View style={styles.partialInputRow}>
+                  <Text style={styles.partialLabel}>Buffalo (L)</Text>
+                  <TextInput value={skipBuf} onChangeText={setSkipBuf} style={styles.partialInput} keyboardType="decimal-pad" selectTextOnFocus />
+                </View>
+              )}
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                <Pressable style={[styles.actionBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]} onPress={() => setShowPartial(false)}>
+                  <Text style={[styles.actionText, { color: colors.onSurface }]}>Cancel</Text>
+                </Pressable>
+                <Pressable style={[styles.actionBtn, { backgroundColor: colors.error }]} onPress={() => onAction(contact.id, "partial", parseFloat(skipCow) || 0, parseFloat(skipBuf) || 0)}>
+                  <Text style={[styles.actionText, { color: "#fff" }]}>Confirm Skip</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <>
+              {hasBoth && (
+                <View style={styles.actionRow}>
+                  <Pressable style={[styles.actionBtn, { backgroundColor: colors.error + "20" }]} onPress={() => onAction(contact.id, "skipped_cow")}>
+                    <Text style={[styles.actionText, { color: colors.error }]}>Skip Cow</Text>
+                  </Pressable>
+                  <Pressable style={[styles.actionBtn, { backgroundColor: colors.error + "20" }]} onPress={() => onAction(contact.id, "skipped_buffalo")}>
+                    <Text style={[styles.actionText, { color: colors.error }]}>Skip Buffalo</Text>
+                  </Pressable>
+                </View>
+              )}
+              <View style={styles.actionRow}>
+                <Pressable style={[styles.actionBtn, { backgroundColor: colors.surfaceTertiary, flex: 0.8 }]} onPress={() => setShowPartial(true)}>
+                  <Text style={[styles.actionText, { color: colors.onSurface }]}>Partial</Text>
+                </Pressable>
+                <Pressable style={[styles.actionBtn, { backgroundColor: colors.error + "20", flex: 1.2 }]} onPress={() => onAction(contact.id, "skipped")}>
+                  <Text style={[styles.actionText, { color: colors.error }]}>{hasBoth ? "Skip Both" : "Skipped"}</Text>
+                </Pressable>
+                <Pressable style={[styles.actionBtn, { backgroundColor: colors.brandPrimary, flex: 1.5 }]} onPress={() => onAction(contact.id, "delivered")}>
+                  <Text style={[styles.actionText, { color: "#fff" }]}>Delivered</Text>
+                </Pressable>
+              </View>
+            </>
+          )}
+        </View>
+      ) : (
+        <View style={styles.statusBox}>
+          <MaterialCommunityIcons 
+            name={delivery.status === "delivered" ? "check-circle" : (delivery.status.includes("skipped") || delivery.status === "partial" ? "close-circle" : "alert-circle")} 
+            size={16} 
+            color={delivery.status === "delivered" ? colors.success : colors.error} 
+          />
+          <Text style={styles.statusText}>
+            {delivery.status === "skipped_cow" ? "Skipped Cow" : 
+             delivery.status === "skipped_buffalo" ? "Skipped Buffalo" : 
+             delivery.status === "partial" ? "Partial Delivery" :
+             `Marked as ${delivery.status}`}
+          </Text>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -230,9 +271,14 @@ const styles = StyleSheet.create({
   reqText: { fontSize: 12, fontWeight: "600", color: colors.onSurface },
   
   actionRow: { flexDirection: "row", gap: spacing.md },
-  actionBtn: { flex: 1, paddingVertical: 12, borderRadius: radius.md, alignItems: "center" },
+  actionBtn: { flex: 1, paddingVertical: 12, borderRadius: radius.md, alignItems: "center", justifyContent: "center" },
   actionText: { fontWeight: "700", fontSize: 14 },
   
   statusBox: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.surface, padding: spacing.sm, borderRadius: radius.md, alignSelf: "flex-start" },
   statusText: { fontSize: 13, fontWeight: "600", color: colors.muted },
+
+  partialBox: { padding: spacing.sm, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
+  partialInputRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  partialLabel: { fontSize: 14, color: colors.onSurfaceSecondary },
+  partialInput: { width: 80, height: 36, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, paddingHorizontal: 8, textAlign: "center", backgroundColor: colors.surfaceSecondary },
 });

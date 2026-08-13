@@ -126,7 +126,8 @@ export const api = {
   deleteDeliveryBoy: (id: string) => request(`/delivery-boys/${id}`, { method: "DELETE" }),
   
   getDeliveryRoute: () => request<{ route: any[]; skips: any[]; deliveries: any[] }>("/delivery/route"),
-  markDelivery: (contact_id: string, status: string) => request("/delivery/mark", { method: "POST", body: { contact_id, status } }),
+  markDelivery: (contact_id: string, status: string, skipped_cow_qty?: number, skipped_buffalo_qty?: number) => 
+    request("/delivery/mark", { method: "POST", body: { contact_id, status, skipped_cow_qty, skipped_buffalo_qty } }),
   
   generateInvite: () => request<{ invite_token: string }>("/invites", { method: "POST" }),
   checkInvite: (token: string) => request<{ valid: boolean; used: boolean }>(`/invites/${token}`, { auth: false }),

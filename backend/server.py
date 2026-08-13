@@ -124,7 +124,9 @@ class CustomerRegisterIn(BaseModel):
 
 class DeliveryMarkIn(BaseModel):
     contact_id: str
-    status: str # "delivered" or "skipped"
+    status: str # "delivered" or "skipped" or "skipped_cow" or "skipped_buffalo" or "partial"
+    skipped_cow_qty: Optional[float] = None
+    skipped_buffalo_qty: Optional[float] = None
 
 class MilkSkipIn(BaseModel):
     date: str  # YYYY-MM-DD
@@ -317,6 +319,18 @@ async def mark_delivery(body: DeliveryMarkIn, boy=Depends(get_delivery_boy)):
             await db.milk_skips.update_one(
                 {"farm_id": contact["farm_id"], "contact_id": body.contact_id, "date": date, "milk_type": "buffalo"},
                 {"$set": {"qty_skipped": contact.get("buffalo_req_ltr")}}, upsert=True
+            )
+            
+    if body.status == "partial":
+        if body.skipped_cow_qty and body.skipped_cow_qty > 0:
+            await db.milk_skips.update_one(
+                {"farm_id": boy["farm_id"], "contact_id": body.contact_id, "date": date, "milk_type": "cow"},
+                {"$set": {"qty_skipped": body.skipped_cow_qty}}, upsert=True
+            )
+        if body.skipped_buffalo_qty and body.skipped_buffalo_qty > 0:
+            await db.milk_skips.update_one(
+                {"farm_id": boy["farm_id"], "contact_id": body.contact_id, "date": date, "milk_type": "buffalo"},
+                {"$set": {"qty_skipped": body.skipped_buffalo_qty}}, upsert=True
             )
     
     doc = {
