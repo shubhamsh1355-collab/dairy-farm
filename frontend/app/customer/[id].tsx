@@ -201,7 +201,7 @@ export default function CustomerDetail() {
             </View>
             <View>
               <Text style={styles.label}>Mobile</Text>
-              <TextInput style={styles.input} value={editMobile} onChangeText={setEditMobile} keyboardType="phone-pad" />
+              <TextInput style={styles.input} value={editMobile} onChangeText={setEditMobile} keyboardType="phone-pad" maxLength={10} />
             </View>
             <View>
               <Text style={styles.label}>Address / Location</Text>

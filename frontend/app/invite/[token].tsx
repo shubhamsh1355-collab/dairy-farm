@@ -129,7 +129,7 @@ export default function InviteRegistration() {
         <TextInput value={name} onChangeText={setName} style={styles.input} placeholder="John Doe" />
         
         <Text style={styles.label}>Mobile Number</Text>
-        <TextInput value={mobile} onChangeText={setMobile} style={styles.input} keyboardType="phone-pad" placeholder="10-digit mobile" />
+        <TextInput value={mobile} onChangeText={setMobile} style={styles.input} keyboardType="phone-pad" placeholder="10-digit mobile" maxLength={10} />
 
         <Text style={styles.label}>Daily Cow Milk (Liters)</Text>
         <TextInput value={cowReq} onChangeText={setCowReq} style={styles.input} keyboardType="decimal-pad" placeholder="0" />

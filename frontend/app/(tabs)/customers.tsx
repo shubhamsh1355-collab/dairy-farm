@@ -190,11 +190,12 @@ export default function Customers() {
             style={styles.input}
           />
           <TextInput
-            placeholder="Mobile (+91...)"
+            placeholder="10-digit mobile"
             placeholderTextColor={colors.muted}
             value={newContactMobile}
             onChangeText={setNewContactMobile}
             keyboardType="phone-pad"
+            maxLength={10}
             style={styles.input}
           />
           <View style={{ flexDirection: "row", gap: spacing.sm }}>

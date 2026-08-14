@@ -117,7 +117,7 @@ export default function DeliveryBoysScreen() {
             <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="e.g. Ramesh" />
 
             <Text style={styles.label}>Mobile Number</Text>
-            <TextInput style={styles.input} value={mobile} onChangeText={setMobile} keyboardType="phone-pad" placeholder="10-digit mobile" />
+            <TextInput style={styles.input} value={mobile} onChangeText={setMobile} keyboardType="phone-pad" placeholder="10-digit mobile" maxLength={10} />
 
             <Text style={styles.label}>4-Digit Login PIN</Text>
             <TextInput style={styles.input} value={pin} onChangeText={setPin} keyboardType="number-pad" placeholder="1234" maxLength={4} />
