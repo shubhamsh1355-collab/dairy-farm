@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, Image, Dimensions } from "react-native";
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView, ActivityIndicator, Image, Dimensions, KeyboardAvoidingView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Location from 'expo-location';
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -124,8 +124,9 @@ export default function InviteRegistration() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 100 }} bounces={false}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1 }} bounces={false}>
         <View style={styles.heroContainer}>
           <Image source={{ uri: images.hero_farm }} style={styles.heroImage} />
           <View style={styles.heroOverlay}>
@@ -218,12 +219,13 @@ export default function InviteRegistration() {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
-        <Pressable style={styles.cta} onPress={handleSubmit} disabled={submitting}>
-          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaText}>Complete Registration</Text>}
-        </Pressable>
-      </View>
-    </View>
+        <View style={styles.footer}>
+          <Pressable style={styles.cta} onPress={handleSubmit} disabled={submitting}>
+            {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaText}>Complete Registration</Text>}
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -255,7 +257,7 @@ const styles = StyleSheet.create({
   locErrorBox: { flexDirection: "row", backgroundColor: colors.error + "15", padding: spacing.sm, borderRadius: radius.sm, marginBottom: spacing.md },
   locErrorText: { color: colors.error, fontSize: 13, flex: 1, fontWeight: "500", lineHeight: 18 },
   
-  footer: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: colors.surface, padding: spacing.xl, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  footer: { backgroundColor: colors.surface, padding: spacing.xl, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
   cta: { height: 56, borderRadius: radius.pill, backgroundColor: colors.brandPrimary, alignItems: "center", justifyContent: "center", ...shadow.card },
   ctaText: { color: colors.onBrandPrimary, fontSize: 16, fontWeight: "700" },
   

@@ -122,14 +122,21 @@ export default function Customers() {
       const url = `${baseUrl}/invite/${res.invite_token}`;
       
       try {
-        await Clipboard.setStringAsync(url);
-        if (Platform.OS !== "web") {
+        if (typeof navigator !== 'undefined' && navigator.share) {
+          await navigator.share({
+            title: 'Gokul Dairy Farm',
+            text: 'Register for milk delivery:',
+            url: url
+          });
+        } else if (Platform.OS !== "web") {
           await Share.share({ message: `Register for milk delivery: ${url}` });
         } else {
+          await Clipboard.setStringAsync(url);
           Alert.alert("Link Copied!", `The invite link has been copied to your clipboard.\n\nYou can now paste it directly into WhatsApp:\n\n${url}`);
         }
       } catch (err) {
-        Alert.alert("Link Generated", `Please copy this link:\n\n${url}`);
+        await Clipboard.setStringAsync(url);
+        Alert.alert("Link Generated", `The link was copied to clipboard:\n\n${url}`);
       }
     } catch(e: any) {
       Alert.alert("Error", e.message);
