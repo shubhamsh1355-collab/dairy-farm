@@ -505,9 +505,62 @@ async def get_expected_delivery(farm_id: str, date: str) -> dict:
 @api.get("/milk/today")
 async def milk_today(farm=Depends(get_farm)):
     date = today_key()
+    
+    # 1. Fetch old logs for compatibility (produced/used)
     logs = await db.milk_logs.find({"farm_id": farm["id"], "date": date}, {"_id": 0}).to_list(10)
+    
+    # 2. Fetch new production logs
+    prod_logs = await db.production_logs.find({"farm_id": farm["id"], "date": date}, {"_id": 0}).to_list(100)
+    new_cow_prod = sum(l.get("cow_qty", 0) for l in prod_logs)
+    new_buf_prod = sum(l.get("buffalo_qty", 0) for l in prod_logs)
+    
+    # 3. Calculate exactly what was delivered today
+    deliveries = await db.deliveries.find({"farm_id": farm["id"], "date": date}, {"_id": 0}).to_list(500)
+    skips = await db.milk_skips.find({"farm_id": farm["id"], "date": date}, {"_id": 0}).to_list(500)
+    
+    contact_ids = [d["contact_id"] for d in deliveries]
+    contacts = await db.contacts.find({"id": {"$in": contact_ids}}).to_list(500)
+    contact_map = {c["id"]: c for c in contacts}
+    
+    cow_del = 0
+    buf_del = 0
+    
+    for d in deliveries:
+        c = contact_map.get(d["contact_id"])
+        if not c: continue
+        
+        c_skips = [s for s in skips if s["contact_id"] == c["id"]]
+        cow_skip = next((s["qty_skipped"] for s in c_skips if s["milk_type"] == "cow"), 0)
+        buf_skip = next((s["qty_skipped"] for s in c_skips if s["milk_type"] == "buffalo"), 0)
+        
+        if d["status"] == "delivered":
+            cow_del += c.get("cow_req_ltr", 0)
+            buf_del += c.get("buffalo_req_ltr", 0)
+        elif d["status"] == "partial":
+            cow_del += max(0, c.get("cow_req_ltr", 0) - cow_skip)
+            buf_del += max(0, c.get("buffalo_req_ltr", 0) - buf_skip)
+        elif d["status"] == "skipped_cow":
+            buf_del += c.get("buffalo_req_ltr", 0)
+        elif d["status"] == "skipped_buffalo":
+            cow_del += c.get("cow_req_ltr", 0)
+
+    # 4. Merge old logs with new math
+    # Ensure there's a cow and buffalo log to return
+    cow_log = next((l for l in logs if l["milk_type"] == "cow"), {"milk_type": "cow", "produced_ltr": 0, "used_for_products_ltr": 0})
+    buf_log = next((l for l in logs if l["milk_type"] == "buffalo"), {"milk_type": "buffalo", "produced_ltr": 0, "used_for_products_ltr": 0})
+    
+    cow_log["produced_ltr"] = cow_log.get("produced_ltr", 0) + new_cow_prod
+    buf_log["produced_ltr"] = buf_log.get("produced_ltr", 0) + new_buf_prod
+    
+    cow_log["delivered_ltr"] = cow_del
+    buf_log["delivered_ltr"] = buf_del
+    
+    cow_log["remaining_ltr"] = cow_log["produced_ltr"] - cow_del - cow_log.get("used_for_products_ltr", 0)
+    buf_log["remaining_ltr"] = buf_log["produced_ltr"] - buf_del - buf_log.get("used_for_products_ltr", 0)
+    
+    merged_logs = [cow_log, buf_log]
     expected = await get_expected_delivery(farm["id"], date)
-    return {"log": logs[0] if logs else None, "logs": logs, "expected": expected}
+    return {"log": merged_logs[0], "logs": merged_logs, "expected": expected}
 
 
 @api.get("/milk/logs")

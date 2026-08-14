@@ -74,15 +74,18 @@ export default function DeliveryDashboard() {
   let skippedBuf = 0;
 
   (data?.route || []).forEach((c: any) => {
+    // 1. Calculate skips for this contact
+    const contactSkips = data?.skips?.filter((s: any) => s.contact_id === c.id) || [];
+    const cowSkip = contactSkips.find((s: any) => s.milk_type === "cow")?.qty_skipped || 0;
+    const bufSkip = contactSkips.find((s: any) => s.milk_type === "buffalo")?.qty_skipped || 0;
+    
+    // 2. Check if delivery is marked done
     const delivery = data?.deliveries?.find((d: any) => d.contact_id === c.id);
     if (delivery) {
-      if (delivery.status === "delivered") {
-        deliveredCow += c.cow_req_ltr || 0;
-        deliveredBuf += c.buffalo_req_ltr || 0;
-      } else if (delivery.status === "skipped") {
-        skippedCow += c.cow_req_ltr || 0;
-        skippedBuf += c.buffalo_req_ltr || 0;
-      }
+       skippedCow += cowSkip;
+       skippedBuf += bufSkip;
+       deliveredCow += Math.max(0, (c.cow_req_ltr || 0) - cowSkip);
+       deliveredBuf += Math.max(0, (c.buffalo_req_ltr || 0) - bufSkip);
     }
   });
 
