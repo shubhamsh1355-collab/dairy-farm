@@ -17,6 +17,7 @@ export default function InviteRegistration() {
   const [submitting, setSubmitting] = useState(false);
   const [valid, setValid] = useState(false);
   const [used, setUsed] = useState(false);
+  const [justRegistered, setJustRegistered] = useState(false);
   const [error, setError] = useState("");
   const [locError, setLocError] = useState("");
   
@@ -86,6 +87,7 @@ export default function InviteRegistration() {
       if (res.already_registered) {
         setUsed(true);
       } else {
+        setJustRegistered(true);
         setUsed(true);
       }
     } catch (e: any) {
@@ -103,7 +105,17 @@ export default function InviteRegistration() {
     );
   }
 
-  if (used) {
+  if (used && !justRegistered) {
+    return (
+      <View style={styles.center}>
+        <MaterialCommunityIcons name="information-outline" size={80} color={colors.info} />
+        <Text style={styles.title}>Already Registered</Text>
+        <Text style={styles.sub}>This invite link has already been used. Please contact Gokul Dairy Farm if you need to register again.</Text>
+      </View>
+    );
+  }
+
+  if (used && justRegistered) {
     return (
       <View style={styles.center}>
         <MaterialCommunityIcons name="check-decagram" size={80} color={colors.success} />
