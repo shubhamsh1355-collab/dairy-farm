@@ -317,7 +317,9 @@ export default function Customers() {
             disabled={selected.size === 0 || sending}
           >
             <MaterialCommunityIcons name="moped" size={20} color="#fff" />
-            <Text style={styles.sendBtnText}>Assign Boy</Text>
+            <Text style={styles.sendBtnText}>
+              {selected.size > 0 && Array.from(selected).every(id => !!contacts.find(c => c.id === id)?.delivery_boy_id) ? "Change Boy" : "Assign Boy"}
+            </Text>
           </Pressable>
           
           <Pressable
