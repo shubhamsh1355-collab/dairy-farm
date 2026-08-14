@@ -148,7 +148,7 @@ export default function CustomerDetail() {
     if (!bill?.contact?.mobile) return;
     
     const upiId = bill.farm_upi_id || "your-upi-id@bank";
-    const upiLink = `upi://pay?pa=${upiId}&pn=Gokul%20Dairy%20Farm&am=${bill.total_amount}&cu=INR`;
+    const upiLink = `upi://pay?pa=${upiId}&am=${bill.total_amount}&cu=INR`;
 
     const msg = `*Gokul Dairy Farm* 🐄
 ----------------------------------
