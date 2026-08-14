@@ -76,12 +76,19 @@ export default function CustomerDetail() {
     }
   };
 
-  const skipsMap: Record<string, { cow: number, buffalo: number }> = {};
+  const skipsMap: any = {};
   if (bill?.skips) {
     bill.skips.forEach((s: any) => {
       if (!skipsMap[s.date]) skipsMap[s.date] = { cow: 0, buffalo: 0 };
       if (s.milk_type === "cow") skipsMap[s.date].cow += s.qty_skipped;
       if (s.milk_type === "buffalo") skipsMap[s.date].buffalo += s.qty_skipped;
+    });
+  }
+
+  const deliveriesMap: any = {};
+  if (bill?.deliveries) {
+    bill.deliveries.forEach((d: any) => {
+      deliveriesMap[d.date] = d.status;
     });
   }
 
@@ -278,30 +285,28 @@ export default function CustomerDetail() {
             {daysArray.map(d => {
               const dateStr = `${currentMonthDate.format("YYYY-MM")}-${String(d).padStart(2, "0")}`;
               const skip = skipsMap[dateStr];
+              const deliveryStatus = deliveriesMap[dateStr];
               
-              let dotColor = colors.success; 
+              let dotColor = "transparent"; // Default is no dot unless explicitly marked
               
-              const isFuture = dayjs(dateStr).isAfter(dayjs(), 'day');
-              
-              // Only consider them "joined" if they have a created_at date
-              let isBeforeJoined = false;
-              if (bill?.contact?.created_at) {
-                 isBeforeJoined = dayjs(dateStr).isBefore(dayjs(bill.contact.created_at), 'day');
-              }
-              
-              if (isFuture || isBeforeJoined) {
-                dotColor = "transparent"; // No delivery expected before they joined or in the future
-              } else if (skip) {
-                const cowReq = bill?.contact?.cow_req_ltr || 0;
-                const bufReq = bill?.contact?.buffalo_req_ltr || 0;
-                const totalReq = cowReq + bufReq;
-                const totalSkipped = (skip.cow || 0) + (skip.buffalo || 0);
-                
-                if (totalSkipped >= totalReq && totalReq > 0) {
-                  dotColor = colors.error;
-                } else if (totalSkipped > 0) {
+              if (deliveryStatus === "delivered") {
+                  dotColor = colors.success;
+              } else if (deliveryStatus === "partial" || deliveryStatus === "skipped_cow" || deliveryStatus === "skipped_buffalo") {
                   dotColor = "#F59E0B";
-                }
+              } else if (deliveryStatus === "skipped") {
+                  dotColor = colors.error;
+              } else if (skip) {
+                  // Fallback for skips manually added by admin without a delivery record
+                  const cowReq = bill?.contact?.cow_req_ltr || 0;
+                  const bufReq = bill?.contact?.buffalo_req_ltr || 0;
+                  const totalReq = cowReq + bufReq;
+                  const totalSkipped = (skip.cow || 0) + (skip.buffalo || 0);
+                  
+                  if (totalSkipped >= totalReq && totalReq > 0) {
+                    dotColor = colors.error;
+                  } else if (totalSkipped > 0) {
+                    dotColor = "#F59E0B";
+                  }
               }
 
               const isSelected = selectedCalDate === dateStr;

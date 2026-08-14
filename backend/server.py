@@ -984,8 +984,27 @@ async def generate_bill(cid: str, month: str, farm=Depends(get_farm)):
     buffalo_skipped = sum(s.get("qty_skipped", 0) for s in skips if s.get("milk_type") == "buffalo")
     total_skipped = cow_skipped + buffalo_skipped
     
-    delivered_cow = max(0.0, expected_cow - cow_skipped)
-    delivered_buffalo = max(0.0, expected_buffalo - buffalo_skipped)
+    deliveries = await db.deliveries.find({"contact_id": cid, "date": {"$regex": f"^{month}"}}, {"_id": 0}).to_list(100)
+    
+    delivered_cow = 0.0
+    delivered_buffalo = 0.0
+    
+    for d in deliveries:
+        d_date = d["date"]
+        st = d["status"]
+        if st == "delivered":
+            delivered_cow += cow_req
+            delivered_buffalo += buffalo_req
+        elif st == "partial":
+            c_skip = next((s["qty_skipped"] for s in skips if s["date"] == d_date and s["milk_type"] == "cow"), 0)
+            b_skip = next((s["qty_skipped"] for s in skips if s["date"] == d_date and s["milk_type"] == "buffalo"), 0)
+            delivered_cow += max(0.0, cow_req - c_skip)
+            delivered_buffalo += max(0.0, buffalo_req - b_skip)
+        elif st == "skipped_cow":
+            delivered_buffalo += buffalo_req
+        elif st == "skipped_buffalo":
+            delivered_cow += cow_req
+            
     delivered_ltr = delivered_cow + delivered_buffalo
     
     milk_amount = (delivered_cow * cow_rate) + (delivered_buffalo * buffalo_rate)
@@ -1009,6 +1028,7 @@ async def generate_bill(cid: str, month: str, farm=Depends(get_farm)):
         "product_amount": product_amount,
         "total_amount": total_amount,
         "skips": skips,
+        "deliveries": deliveries,
         "farm_upi_id": farm.get("upi_id")
     }
 
