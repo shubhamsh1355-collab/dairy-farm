@@ -146,7 +146,29 @@ export default function CustomerDetail() {
 
   const handleWhatsApp = () => {
     if (!bill?.contact?.mobile) return;
-    const msg = `Hello ${bill.contact.name}, your bill for ${dayjs().format("MMMM YYYY")} is ₹${bill.total_amount}. Expected: ${bill.expected_ltr}L, Skipped: ${bill.total_skipped_ltr}L, Delivered: ${bill.delivered_ltr}L.`;
+    
+    const upiId = bill.farm_upi_id || "your-upi-id@bank";
+    const upiLink = `upi://pay?pa=${upiId}&pn=Gokul%20Dairy%20Farm&am=${bill.total_amount}&cu=INR`;
+
+    const msg = `*Gokul Dairy Farm* 🐄
+----------------------------------
+*Hello ${bill.contact.name},*
+Here is your milk delivery bill for *${dayjs(bill.month).format("MMMM YYYY")}*.
+
+🧾 *BILL SUMMARY*
+• Delivered (Cow): ${bill.delivered_cow} L
+• Delivered (Buffalo): ${bill.delivered_buffalo} L
+• Extra Products: ₹${bill.product_amount}
+----------------------------------
+💰 *Total Amount Due: ₹${bill.total_amount}*
+
+🔗 *Tap the link below to pay directly via any UPI App (GPay, PhonePe, Paytm):*
+${upiLink}
+
+_(If the link is not clickable, please copy our UPI ID: *${upiId}*)_
+
+Thank you for choosing Gokul Dairy Farm! 🥛`;
+
     Linking.openURL(`https://wa.me/91${bill.contact.mobile}?text=${encodeURIComponent(msg)}`);
   };
 
