@@ -4,12 +4,16 @@ Backend: FastAPI + MongoDB (Motor async).
 Auth: Mock OTP over mobile number. Token = uuid stored on Farm doc.
 """
 from fastapi import FastAPI, APIRouter, HTTPException, Header, Depends
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import random
 import logging
+import io
+import csv
+import calendar as cal_module
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
@@ -761,6 +765,132 @@ async def analytics(month: Optional[str] = None, farm=Depends(get_farm)):
         },
         "series": series,
     }
+
+
+@api.get("/analytics/export")
+async def export_monthly_report(
+    month: Optional[str] = None,
+    token: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+):
+    """Download a monthly report as a CSV file with two sections:
+    1. Customer Bills
+    2. Daily Production Logs
+    """
+    # Accept token from query param (for browser file download links) or Bearer header
+    raw_token = token or (authorization.split(" ", 1)[1].strip() if authorization and authorization.startswith("Bearer ") else None)
+    if not raw_token:
+        raise HTTPException(401, "Missing auth token")
+    farm = await db.farms.find_one({"token": raw_token}, {"_id": 0})
+    if not farm:
+        raise HTTPException(401, "Invalid or expired token")
+
+    m = month or month_key()
+
+    # ---------- Sheet 1: Customer Bills ----------
+    contacts_list = await db.contacts.find({"farm_id": farm["id"]}, {"_id": 0}).sort("name", 1).to_list(500)
+    all_skips = await db.milk_skips.find({"farm_id": farm["id"], "month": m}, {"_id": 0}).to_list(2000)
+    all_deliveries = await db.deliveries.find({"date": {"$regex": f"^{m}"}}, {"_id": 0}).to_list(5000)
+    all_txs = await db.product_tx.find({"farm_id": farm["id"], "month": m, "type": "sale"}, {"_id": 0}).to_list(2000)
+
+    customer_rows = []
+    for contact in contacts_list:
+        cid = contact["id"]
+        cow_req = float(contact.get("cow_req_ltr", 0))
+        buffalo_req = float(contact.get("buffalo_req_ltr", 0))
+        cow_rate = float(contact.get("cow_rate", 60))
+        buffalo_rate = float(contact.get("buffalo_rate", 70))
+
+        c_skips = [s for s in all_skips if s["contact_id"] == cid]
+        c_deliveries = [d for d in all_deliveries if d["contact_id"] == cid]
+        c_txs = [t for t in all_txs if t.get("contact_id") == cid]
+
+        delivered_cow = 0.0
+        delivered_buffalo = 0.0
+        for d in c_deliveries:
+            st = d["status"]
+            d_date = d["date"]
+            if st == "delivered":
+                delivered_cow += cow_req
+                delivered_buffalo += buffalo_req
+            elif st == "partial":
+                c_skip = next((s["qty_skipped"] for s in c_skips if s["date"] == d_date and s["milk_type"] == "cow"), 0)
+                b_skip = next((s["qty_skipped"] for s in c_skips if s["date"] == d_date and s["milk_type"] == "buffalo"), 0)
+                delivered_cow += max(0.0, cow_req - c_skip)
+                delivered_buffalo += max(0.0, buffalo_req - b_skip)
+            elif st == "skipped_cow":
+                delivered_buffalo += buffalo_req
+            elif st == "skipped_buffalo":
+                delivered_cow += cow_req
+
+        cow_skipped = sum(s.get("qty_skipped", 0) for s in c_skips if s.get("milk_type") == "cow")
+        buffalo_skipped = sum(s.get("qty_skipped", 0) for s in c_skips if s.get("milk_type") == "buffalo")
+        product_amount = sum(t.get("amount", 0) for t in c_txs)
+        milk_amount = (delivered_cow * cow_rate) + (delivered_buffalo * buffalo_rate)
+        total_amount = milk_amount + product_amount
+
+        customer_rows.append({
+            "Customer Name": contact.get("name", ""),
+            "Mobile": contact.get("mobile", ""),
+            "Address": contact.get("address", ""),
+            "Cow Req (L/day)": cow_req,
+            "Buffalo Req (L/day)": buffalo_req,
+            "Cow Skipped (L)": round(cow_skipped, 2),
+            "Buffalo Skipped (L)": round(buffalo_skipped, 2),
+            "Delivered Cow (L)": round(delivered_cow, 2),
+            "Delivered Buffalo (L)": round(delivered_buffalo, 2),
+            "Total Delivered (L)": round(delivered_cow + delivered_buffalo, 2),
+            "Milk Bill (Rs)": round(milk_amount, 2),
+            "Extra Products (Rs)": round(product_amount, 2),
+            "Total Amount Due (Rs)": round(total_amount, 2),
+        })
+
+    # ---------- Sheet 2: Daily Production Logs ----------
+    prod_logs = await db.production_logs.find(
+        {"farm_id": farm["id"], "date": {"$regex": f"^{m}"}},
+        {"_id": 0}
+    ).sort("date", 1).to_list(200)
+
+    production_rows = []
+    for log in prod_logs:
+        production_rows.append({
+            "Date": log.get("date", ""),
+            "Shift": log.get("shift", "").capitalize(),
+            "Cow Produced (L)": log.get("cow_qty", 0),
+            "Buffalo Produced (L)": log.get("buffalo_qty", 0),
+        })
+
+    # ---------- Build CSV in-memory ----------
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Section 1
+    writer.writerow([f"=== CUSTOMER BILLS - {m} ==="])
+    if customer_rows:
+        writer.writerow(customer_rows[0].keys())
+        for row in customer_rows:
+            writer.writerow(row.values())
+    else:
+        writer.writerow(["No customer data found for this month."])
+
+    writer.writerow([])  # blank separator line
+
+    # Section 2
+    writer.writerow([f"=== DAILY PRODUCTION LOGS - {m} ==="])
+    if production_rows:
+        writer.writerow(production_rows[0].keys())
+        for row in production_rows:
+            writer.writerow(row.values())
+    else:
+        writer.writerow(["No production logs found for this month."])
+
+    output.seek(0)
+    filename = f"GokulDairyFarm_Report_{m}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 
 # ---------- routes: contacts + broadcast ----------

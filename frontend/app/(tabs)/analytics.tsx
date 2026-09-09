@@ -1,9 +1,10 @@
 import { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Dimensions } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Dimensions, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { BarChart } from "react-native-gifted-charts";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "@/src/api";
 import { colors, spacing, radius, shadow } from "@/src/theme";
 
@@ -13,6 +14,7 @@ export default function Analytics() {
   const [tab, setTab] = useState<Tab>("milk");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,6 +48,20 @@ export default function Analytics() {
 
   const width = Dimensions.get("window").width - spacing.xl * 2;
 
+  const handleExport = async () => {
+    setDownloading(true);
+    try {
+      const token = await AsyncStorage.getItem("kd_token");
+      if (!token) { Alert.alert("Error", "Not logged in"); return; }
+      const month = data?.month || new Date().toISOString().slice(0, 7);
+      await (api as any).exportMonthlyReport(month, token);
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Failed to download report");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <SafeAreaView edges={["top"]} style={styles.header}>
@@ -53,6 +69,15 @@ export default function Analytics() {
           <Text style={styles.title}>Analytics</Text>
           <Text style={styles.sub}>{data?.month || "This month"}</Text>
         </View>
+        <Pressable onPress={handleExport} disabled={downloading} style={styles.exportBtn}>
+          {downloading
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <>
+                <MaterialCommunityIcons name="microsoft-excel" size={18} color="#fff" />
+                <Text style={styles.exportBtnText}>Export</Text>
+              </>
+          }
+        </Pressable>
       </SafeAreaView>
 
       <View style={styles.segment}>
@@ -174,9 +199,11 @@ function Row({ icon, label, value }: any) {
 }
 
 const styles = StyleSheet.create({
-  header: { paddingHorizontal: spacing.xl, paddingBottom: spacing.md, backgroundColor: colors.surface },
+  header: { paddingHorizontal: spacing.xl, paddingBottom: spacing.md, backgroundColor: colors.surface, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   title: { fontSize: 24, fontWeight: "700", color: colors.onSurface },
   sub: { fontSize: 13, color: colors.muted, marginTop: 2 },
+  exportBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#217346", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 99 },
+  exportBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   segment: { flexDirection: "row", marginHorizontal: spacing.xl, backgroundColor: colors.surfaceTertiary, padding: 4, borderRadius: 999 },
   segBtn: { flex: 1, paddingVertical: 10, borderRadius: 999, alignItems: "center" },
   segBtnActive: { backgroundColor: colors.surfaceSecondary, ...shadow.card },

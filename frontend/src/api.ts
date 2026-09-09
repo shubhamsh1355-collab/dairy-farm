@@ -154,4 +154,16 @@ export const api = {
       body: { message, contact_ids },
     }),
   broadcasts: () => request<{ broadcasts: any[] }>("/broadcasts"),
+
+  exportMonthlyReport: async (month: string, token: string) => {
+    const url = `${API}/api/analytics/export?month=${month}`;
+    const link = document.createElement("a");
+    link.href = url;
+    // Pass auth token as query param for file downloads since headers aren't available
+    link.href = `${API}/api/analytics/export?month=${month}&token=${token}`;
+    link.download = `GokulDairyFarm_Report_${month}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  },
 };
