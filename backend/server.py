@@ -53,20 +53,22 @@ async def startup_db_client():
 
 
 # ---------- helpers ----------
+IST = timezone(timedelta(hours=5, minutes=30))
+
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
+def now_ist() -> datetime:
+    return datetime.now(IST)
 
 def iso(dt: datetime) -> str:
     return dt.replace(tzinfo=timezone.utc).isoformat() if dt.tzinfo is None else dt.isoformat()
 
-
 def today_key() -> str:
-    return now_utc().strftime("%Y-%m-%d")
-
+    return now_ist().strftime("%Y-%m-%d")
 
 def month_key(dt: Optional[datetime] = None) -> str:
-    return (dt or now_utc()).strftime("%Y-%m")
+    return (dt or now_ist()).strftime("%Y-%m")
 
 
 DEFAULT_PRODUCTS = [
@@ -1244,7 +1246,7 @@ async def generate_bill(cid: str, month: str, farm=Depends(get_farm)):
         raise HTTPException(404, "Customer not found")
         
     y, m = map(int, month.split('-'))
-    today = now_utc()
+    today = now_ist()
     
     if today.year == y and today.month == m:
         end_day = today.day
@@ -1254,7 +1256,7 @@ async def generate_bill(cid: str, month: str, farm=Depends(get_farm)):
     start_day = 1
     if "created_at" in contact:
         try:
-            created = datetime.fromisoformat(contact["created_at"].replace("Z", "+00:00"))
+            created = datetime.fromisoformat(contact["created_at"].replace("Z", "+00:00")).astimezone(IST)
             if created.year == y and created.month == m:
                 start_day = created.day
         except ValueError:
