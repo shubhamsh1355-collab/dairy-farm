@@ -788,6 +788,180 @@ async def analytics(month: Optional[str] = None, farm=Depends(get_farm)):
     }
 
 
+def build_billing_pipeline(farm_id: str, month: str, contact_id: Optional[str] = None):
+    match_stage = {"farm_id": farm_id}
+    if contact_id:
+        match_stage["id"] = contact_id
+        
+    return [
+        {"$match": match_stage},
+        {"$lookup": {
+            "from": "deliveries",
+            "let": {"cid": "$id"},
+            "pipeline": [
+                {"$match": {"$expr": {"$eq": ["$contact_id", "$$cid"]}, "date": {"$regex": f"^{month}"}}}
+            ],
+            "as": "deliveries"
+        }},
+        {"$lookup": {
+            "from": "milk_skips",
+            "let": {"cid": "$id"},
+            "pipeline": [
+                {"$match": {"$expr": {"$eq": ["$contact_id", "$$cid"]}, "month": month}}
+            ],
+            "as": "skips"
+        }},
+        {"$lookup": {
+            "from": "product_tx",
+            "let": {"cid": "$id"},
+            "pipeline": [
+                {"$match": {"$expr": {"$eq": ["$contact_id", "$$cid"]}, "month": month, "type": "sale"}}
+            ],
+            "as": "txs"
+        }},
+        {"$addFields": {
+            "cow_req": {"$toDouble": {"$ifNull": ["$cow_req_ltr", {"$ifNull": ["$daily_requirement_ltr", 0]}]}},
+            "buffalo_req": {"$toDouble": {"$ifNull": ["$buffalo_req_ltr", 0]}},
+            "cow_rate": {"$toDouble": {"$ifNull": ["$cow_rate", {"$ifNull": ["$rate_per_ltr", 60]}]}},
+            "buffalo_rate": {"$toDouble": {"$ifNull": ["$buffalo_rate", 70]}}
+        }},
+        {"$addFields": {
+            "delivered_cow": {
+                "$sum": {
+                    "$map": {
+                        "input": "$deliveries",
+                        "as": "d",
+                        "in": {
+                            "$switch": {
+                                "branches": [
+                                    {"case": {"$eq": ["$$d.status", "delivered"]}, "then": "$cow_req"},
+                                    {"case": {"$eq": ["$$d.status", "skipped_buffalo"]}, "then": "$cow_req"},
+                                    {"case": {"$eq": ["$$d.status", "partial"]}, "then": {
+                                        "$max": [
+                                            0,
+                                            {"$subtract": [
+                                                "$cow_req",
+                                                {"$sum": {
+                                                    "$map": {
+                                                        "input": {
+                                                            "$filter": {
+                                                                "input": "$skips",
+                                                                "as": "s",
+                                                                "cond": {"$and": [
+                                                                    {"$eq": ["$$s.date", "$$d.date"]},
+                                                                    {"$eq": ["$$s.milk_type", "cow"]}
+                                                                ]}
+                                                            }
+                                                        },
+                                                        "as": "s",
+                                                        "in": "$$s.qty_skipped"
+                                                    }
+                                                }}
+                                            ]}
+                                        ]
+                                    }}
+                                ],
+                                "default": 0
+                            }
+                        }
+                    }
+                }
+            },
+            "delivered_buffalo": {
+                "$sum": {
+                    "$map": {
+                        "input": "$deliveries",
+                        "as": "d",
+                        "in": {
+                            "$switch": {
+                                "branches": [
+                                    {"case": {"$eq": ["$$d.status", "delivered"]}, "then": "$buffalo_req"},
+                                    {"case": {"$eq": ["$$d.status", "skipped_cow"]}, "then": "$buffalo_req"},
+                                    {"case": {"$eq": ["$$d.status", "partial"]}, "then": {
+                                        "$max": [
+                                            0,
+                                            {"$subtract": [
+                                                "$buffalo_req",
+                                                {"$sum": {
+                                                    "$map": {
+                                                        "input": {
+                                                            "$filter": {
+                                                                "input": "$skips",
+                                                                "as": "s",
+                                                                "cond": {"$and": [
+                                                                    {"$eq": ["$$s.date", "$$d.date"]},
+                                                                    {"$eq": ["$$s.milk_type", "buffalo"]}
+                                                                ]}
+                                                            }
+                                                        },
+                                                        "as": "s",
+                                                        "in": "$$s.qty_skipped"
+                                                    }
+                                                }}
+                                            ]}
+                                        ]
+                                    }}
+                                ],
+                                "default": 0
+                            }
+                        }
+                    }
+                }
+            },
+            "product_amount": {
+                "$sum": "$txs.amount"
+            }
+        }},
+        {"$addFields": {
+            "milk_amount": {
+                "$add": [
+                    {"$multiply": ["$delivered_cow", "$cow_rate"]},
+                    {"$multiply": ["$delivered_buffalo", "$buffalo_rate"]}
+                ]
+            }
+        }},
+        {"$addFields": {
+            "total_amount": {"$add": ["$milk_amount", "$product_amount"]},
+            "cow_skipped": {
+                "$sum": {
+                    "$map": {
+                        "input": {"$filter": {"input": "$skips", "as": "s", "cond": {"$eq": ["$$s.milk_type", "cow"]}}},
+                        "as": "s",
+                        "in": "$$s.qty_skipped"
+                    }
+                }
+            },
+            "buffalo_skipped": {
+                "$sum": {
+                    "$map": {
+                        "input": {"$filter": {"input": "$skips", "as": "s", "cond": {"$eq": ["$$s.milk_type", "buffalo"]}}},
+                        "as": "s",
+                        "in": "$$s.qty_skipped"
+                    }
+                }
+            }
+        }},
+        {"$project": {
+            "id": 1,
+            "name": 1,
+            "mobile": 1,
+            "address": 1,
+            "cow_req": 1,
+            "buffalo_req": 1,
+            "delivered_cow": 1,
+            "delivered_buffalo": 1,
+            "cow_skipped": 1,
+            "buffalo_skipped": 1,
+            "milk_amount": 1,
+            "product_amount": 1,
+            "total_amount": 1,
+            "deliveries": 1,
+            "skips": 1,
+            "txs": 1,
+            "created_at": 1
+        }}
+    ]
+
 @api.get("/analytics/export")
 async def export_monthly_report(
     month: Optional[str] = None,
@@ -809,61 +983,28 @@ async def export_monthly_report(
     m = month or month_key()
 
     # ---------- Sheet 1: Customer Bills ----------
-    contacts_list = await db.contacts.find({"farm_id": farm["id"]}, {"_id": 0}).sort("name", 1).to_list(500)
-    all_skips = await db.milk_skips.find({"farm_id": farm["id"], "month": m}, {"_id": 0}).to_list(2000)
-    all_deliveries = await db.deliveries.find({"date": {"$regex": f"^{m}"}}, {"_id": 0}).to_list(5000)
-    all_txs = await db.product_tx.find({"farm_id": farm["id"], "month": m, "type": "sale"}, {"_id": 0}).to_list(2000)
+    pipeline = build_billing_pipeline(farm["id"], m)
+    # Sort by name
+    pipeline.append({"$sort": {"name": 1}})
+    
+    contacts_data = await db.contacts.aggregate(pipeline).to_list(1000)
 
     customer_rows = []
-    for contact in contacts_list:
-        cid = contact["id"]
-        cow_req = float(contact.get("cow_req_ltr", 0))
-        buffalo_req = float(contact.get("buffalo_req_ltr", 0))
-        cow_rate = float(contact.get("cow_rate", 60))
-        buffalo_rate = float(contact.get("buffalo_rate", 70))
-
-        c_skips = [s for s in all_skips if s["contact_id"] == cid]
-        c_deliveries = [d for d in all_deliveries if d["contact_id"] == cid]
-        c_txs = [t for t in all_txs if t.get("contact_id") == cid]
-
-        delivered_cow = 0.0
-        delivered_buffalo = 0.0
-        for d in c_deliveries:
-            st = d["status"]
-            d_date = d["date"]
-            if st == "delivered":
-                delivered_cow += cow_req
-                delivered_buffalo += buffalo_req
-            elif st == "partial":
-                c_skip = next((s["qty_skipped"] for s in c_skips if s["date"] == d_date and s["milk_type"] == "cow"), 0)
-                b_skip = next((s["qty_skipped"] for s in c_skips if s["date"] == d_date and s["milk_type"] == "buffalo"), 0)
-                delivered_cow += max(0.0, cow_req - c_skip)
-                delivered_buffalo += max(0.0, buffalo_req - b_skip)
-            elif st == "skipped_cow":
-                delivered_buffalo += buffalo_req
-            elif st == "skipped_buffalo":
-                delivered_cow += cow_req
-
-        cow_skipped = sum(s.get("qty_skipped", 0) for s in c_skips if s.get("milk_type") == "cow")
-        buffalo_skipped = sum(s.get("qty_skipped", 0) for s in c_skips if s.get("milk_type") == "buffalo")
-        product_amount = sum(t.get("amount", 0) for t in c_txs)
-        milk_amount = (delivered_cow * cow_rate) + (delivered_buffalo * buffalo_rate)
-        total_amount = milk_amount + product_amount
-
+    for c in contacts_data:
         customer_rows.append({
-            "Customer Name": contact.get("name", ""),
-            "Mobile": contact.get("mobile", ""),
-            "Address": contact.get("address", ""),
-            "Cow Req (L/day)": cow_req,
-            "Buffalo Req (L/day)": buffalo_req,
-            "Cow Skipped (L)": round(cow_skipped, 2),
-            "Buffalo Skipped (L)": round(buffalo_skipped, 2),
-            "Delivered Cow (L)": round(delivered_cow, 2),
-            "Delivered Buffalo (L)": round(delivered_buffalo, 2),
-            "Total Delivered (L)": round(delivered_cow + delivered_buffalo, 2),
-            "Milk Bill (Rs)": round(milk_amount, 2),
-            "Extra Products (Rs)": round(product_amount, 2),
-            "Total Amount Due (Rs)": round(total_amount, 2),
+            "Customer Name": c.get("name", ""),
+            "Mobile": c.get("mobile", ""),
+            "Address": c.get("address", ""),
+            "Cow Req (L/day)": c.get("cow_req", 0),
+            "Buffalo Req (L/day)": c.get("buffalo_req", 0),
+            "Cow Skipped (L)": round(c.get("cow_skipped", 0), 2),
+            "Buffalo Skipped (L)": round(c.get("buffalo_skipped", 0), 2),
+            "Delivered Cow (L)": round(c.get("delivered_cow", 0), 2),
+            "Delivered Buffalo (L)": round(c.get("delivered_buffalo", 0), 2),
+            "Total Delivered (L)": round(c.get("delivered_cow", 0) + c.get("delivered_buffalo", 0), 2),
+            "Milk Bill (Rs)": round(c.get("milk_amount", 0), 2),
+            "Extra Products (Rs)": round(c.get("product_amount", 0), 2),
+            "Total Amount Due (Rs)": round(c.get("total_amount", 0), 2),
         })
 
     # ---------- Sheet 2: Daily Production Logs ----------
@@ -1130,56 +1271,28 @@ async def generate_bill(cid: str, month: str, farm=Depends(get_farm)):
     expected_buffalo = days * buffalo_req
     expected_ltr = expected_cow + expected_buffalo
     
-    skips = await db.milk_skips.find({"farm_id": farm["id"], "contact_id": cid, "month": month}, {"_id": 0}).to_list(100)
-    cow_skipped = sum(s.get("qty_skipped", 0) for s in skips if s.get("milk_type", "cow") == "cow")
-    buffalo_skipped = sum(s.get("qty_skipped", 0) for s in skips if s.get("milk_type") == "buffalo")
-    total_skipped = cow_skipped + buffalo_skipped
-    
-    deliveries = await db.deliveries.find({"contact_id": cid, "date": {"$regex": f"^{month}"}}, {"_id": 0}).to_list(100)
-    
-    delivered_cow = 0.0
-    delivered_buffalo = 0.0
-    
-    for d in deliveries:
-        d_date = d["date"]
-        st = d["status"]
-        if st == "delivered":
-            delivered_cow += cow_req
-            delivered_buffalo += buffalo_req
-        elif st == "partial":
-            c_skip = next((s["qty_skipped"] for s in skips if s["date"] == d_date and s["milk_type"] == "cow"), 0)
-            b_skip = next((s["qty_skipped"] for s in skips if s["date"] == d_date and s["milk_type"] == "buffalo"), 0)
-            delivered_cow += max(0.0, cow_req - c_skip)
-            delivered_buffalo += max(0.0, buffalo_req - b_skip)
-        elif st == "skipped_cow":
-            delivered_buffalo += buffalo_req
-        elif st == "skipped_buffalo":
-            delivered_cow += cow_req
-            
-    delivered_ltr = delivered_cow + delivered_buffalo
-    
-    milk_amount = (delivered_cow * cow_rate) + (delivered_buffalo * buffalo_rate)
-    
-    txs = await db.product_tx.find({"farm_id": farm["id"], "contact_id": cid, "month": month, "type": "sale"}, {"_id": 0}).to_list(100)
-    product_amount = sum(t.get("amount", 0) for t in txs)
-    
-    total_amount = milk_amount + product_amount
+    pipeline = build_billing_pipeline(farm["id"], month, cid)
+    agg_res = await db.contacts.aggregate(pipeline).to_list(1)
+    if not agg_res:
+        raise HTTPException(404, "Customer not found or aggregation failed")
+        
+    c = agg_res[0]
     
     return {
         "month": month,
         "contact": contact,
         "days_calculated": days,
         "expected_ltr": expected_ltr,
-        "total_skipped_ltr": total_skipped,
-        "delivered_ltr": delivered_ltr,
-        "delivered_cow": delivered_cow,
-        "delivered_buffalo": delivered_buffalo,
-        "milk_amount": milk_amount,
-        "products": txs,
-        "product_amount": product_amount,
-        "total_amount": total_amount,
-        "skips": skips,
-        "deliveries": deliveries,
+        "total_skipped_ltr": c.get("cow_skipped", 0) + c.get("buffalo_skipped", 0),
+        "delivered_ltr": c.get("delivered_cow", 0) + c.get("delivered_buffalo", 0),
+        "delivered_cow": c.get("delivered_cow", 0),
+        "delivered_buffalo": c.get("delivered_buffalo", 0),
+        "milk_amount": c.get("milk_amount", 0),
+        "products": c.get("txs", []),
+        "product_amount": c.get("product_amount", 0),
+        "total_amount": c.get("total_amount", 0),
+        "skips": c.get("skips", []),
+        "deliveries": c.get("deliveries", []),
         "farm_upi_id": farm.get("upi_id")
     }
 
