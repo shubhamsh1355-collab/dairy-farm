@@ -30,6 +30,27 @@ db = client[os.getenv("DB_NAME", "ksheer_dhara")]
 app = FastAPI(title="Ksheer Dhara API")
 api = APIRouter(prefix="/api")
 
+@app.on_event("startup")
+async def startup_db_client():
+    logging.info("Ensuring database indexes...")
+    # Authentication & Core
+    await db.farms.create_index("token", unique=True)
+    await db.farms.create_index("mobile", unique=True)
+    await db.otps.create_index("mobile", unique=True)
+    await db.delivery_boys.create_index("token", unique=True)
+    
+    # Contacts
+    await db.contacts.create_index("farm_id")
+    await db.contacts.create_index([("farm_id", 1), ("id", 1)], unique=True)
+    
+    # Heavy query collections
+    await db.deliveries.create_index([("contact_id", 1), ("date", 1)])
+    await db.deliveries.create_index("date")
+    await db.milk_skips.create_index([("farm_id", 1), ("contact_id", 1), ("month", 1)])
+    await db.production_logs.create_index([("farm_id", 1), ("date", 1)])
+    await db.product_tx.create_index([("farm_id", 1), ("contact_id", 1), ("month", 1)])
+    logging.info("Database indexes configured successfully.")
+
 
 # ---------- helpers ----------
 def now_utc() -> datetime:
