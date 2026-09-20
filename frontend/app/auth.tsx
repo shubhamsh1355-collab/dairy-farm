@@ -70,7 +70,7 @@ export default function AuthScreen() {
         return;
       }
       if (res.token && res.farm) {
-        await saveSession(res.token, res.farm, res.role || "admin");
+        await saveSession(res.token, res.farm, res.role || "admin", res.refresh_token);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.replace(res.role === "admin" ? "/(tabs)" : "/delivery");
       }
@@ -96,7 +96,7 @@ export default function AuthScreen() {
         owner_name: ownerName,
       });
       if (res.token && res.farm) {
-        await saveSession(res.token, res.farm, "admin");
+        await saveSession(res.token, res.farm, "admin", res.refresh_token);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.replace("/(tabs)");
       }

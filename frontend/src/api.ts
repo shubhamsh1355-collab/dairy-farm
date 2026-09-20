@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API = process.env.EXPO_PUBLIC_BACKEND_URL;
 const TOKEN_KEY = "kd_token";
+const REFRESH_TOKEN_KEY = "kd_refresh_token";
 const FARM_KEY = "kd_farm";
 const ROLE_KEY = "kd_role";
 
@@ -9,10 +10,13 @@ async function getToken(): Promise<string | null> {
   return AsyncStorage.getItem(TOKEN_KEY);
 }
 
-export async function saveSession(token: string, farm: any, role: string = "admin") {
+export async function saveSession(token: string, farm: any, role: string = "admin", refreshToken?: string) {
   await AsyncStorage.setItem(TOKEN_KEY, token);
   await AsyncStorage.setItem(FARM_KEY, JSON.stringify(farm));
   await AsyncStorage.setItem(ROLE_KEY, role);
+  if (refreshToken) {
+    await AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+  }
 }
 
 export async function getRole(): Promise<string> {
@@ -26,12 +30,35 @@ export async function loadFarm(): Promise<any | null> {
 
 export async function clearSession() {
   await AsyncStorage.removeItem(TOKEN_KEY);
+  await AsyncStorage.removeItem(REFRESH_TOKEN_KEY);
   await AsyncStorage.removeItem(FARM_KEY);
   await AsyncStorage.removeItem(ROLE_KEY);
 }
 
 export async function hasSession(): Promise<boolean> {
   return !!(await getToken());
+}
+
+/** Try to silently refresh the access token using the stored refresh token */
+async function tryRefreshToken(): Promise<string | null> {
+  try {
+    const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+    if (!refreshToken) return null;
+    const res = await fetch(`${API}/api/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!res.ok) {
+      await clearSession();
+      return null;
+    }
+    const data = await res.json();
+    await AsyncStorage.setItem(TOKEN_KEY, data.token);
+    return data.token;
+  } catch {
+    return null;
+  }
 }
 
 async function request<T = any>(
@@ -62,6 +89,30 @@ async function request<T = any>(
   }
 
   const data = text ? JSON.parse(text) : {};
+
+  // Auto-refresh if 401 and we have a refresh token
+  if (res.status === 401 && auth) {
+    const newToken = await tryRefreshToken();
+    if (newToken) {
+      // Retry the original request with the new token
+      const retryHeaders = { ...headers, Authorization: `Bearer ${newToken}` };
+      const retryRes = await fetch(`${API}/api${path}`, {
+        method,
+        headers: retryHeaders,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const retryText = await retryRes.text();
+      const retryData = retryText ? JSON.parse(retryText) : {};
+      if (!retryRes.ok) {
+        const msg = retryData?.detail || retryData?.message || `Request failed (${retryRes.status})`;
+        throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+      }
+      return retryData as T;
+    }
+    // Refresh failed → session expired
+    throw new Error("SESSION_EXPIRED");
+  }
+
   if (!res.ok) {
     const msg = data?.detail || data?.message || `Request failed (${res.status})`;
     throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
@@ -86,6 +137,7 @@ export const api = {
       needs_registration?: boolean;
       is_new?: boolean;
       token?: string;
+      refresh_token?: string;
       farm?: any;
       role?: string;
     }>("/auth/verify-otp", { method: "POST", body: payload, auth: false }),

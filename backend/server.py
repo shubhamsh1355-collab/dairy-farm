@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from jose import jwt, JWTError
 import os
 import random
 import logging
@@ -26,6 +27,12 @@ load_dotenv(ROOT_DIR / ".env")
 mongo_url = os.getenv("MONGO_URL", "")
 client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000, tlsAllowInvalidCertificates=True)
 db = client[os.getenv("DB_NAME", "ksheer_dhara")]
+
+# ---------- JWT config ----------
+JWT_SECRET = os.getenv("JWT_SECRET", "ksheer-dhara-dev-secret-change-in-production-please")
+JWT_ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_HOURS = 24
+REFRESH_TOKEN_EXPIRE_DAYS = 30
 
 app = FastAPI(title="Ksheer Dhara API")
 api = APIRouter(prefix="/api")
@@ -49,6 +56,9 @@ async def startup_db_client():
     await db.milk_skips.create_index([("farm_id", 1), ("contact_id", 1), ("month", 1)])
     await db.production_logs.create_index([("farm_id", 1), ("date", 1)])
     await db.product_tx.create_index([("farm_id", 1), ("contact_id", 1), ("month", 1)])
+    # Refresh tokens - auto-delete after expiry via TTL index
+    await db.refresh_tokens.create_index("token", unique=True)
+    await db.refresh_tokens.create_index("expires_at", expireAfterSeconds=0)
     logging.info("Database indexes configured successfully.")
 
 
@@ -69,6 +79,27 @@ def today_key() -> str:
 
 def month_key(dt: Optional[datetime] = None) -> str:
     return (dt or now_ist()).strftime("%Y-%m")
+
+
+# ---------- JWT helpers ----------
+def create_access_token(farm_id: str) -> str:
+    payload = {
+        "sub": farm_id,
+        "type": "access",
+        "exp": now_utc() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS),
+        "iat": now_utc(),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+async def create_refresh_token(farm_id: str) -> str:
+    token = str(uuid.uuid4())
+    await db.refresh_tokens.insert_one({
+        "token": token,
+        "farm_id": farm_id,
+        "expires_at": now_utc() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        "created_at": now_utc(),
+    })
+    return token
 
 
 DEFAULT_PRODUCTS = [
@@ -189,6 +220,21 @@ async def get_farm(authorization: Optional[str] = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "Missing auth token")
     token = authorization.split(" ", 1)[1].strip()
+
+    # Try JWT first
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "access":
+            raise HTTPException(401, "Invalid token type")
+        farm_id = payload.get("sub")
+        farm = await db.farms.find_one({"id": farm_id}, {"_id": 0})
+        if not farm:
+            raise HTTPException(401, "Farm not found")
+        return farm
+    except JWTError:
+        pass
+
+    # Fallback: legacy UUID token (backward compat during transition)
     farm = await db.farms.find_one({"token": token}, {"_id": 0})
     if not farm:
         raise HTTPException(401, "Invalid or expired token")
@@ -248,20 +294,16 @@ async def verify_otp(body: VerifyOtpIn):
     is_new = False
     if not farm:
         if not body.farm_name or not body.owner_name:
-            # Signal frontend to collect farm registration
             return {"needs_registration": True, "mobile": mobile}
         farm_id = str(uuid.uuid4())
-        token = str(uuid.uuid4())
         farm = {
             "id": farm_id,
             "mobile": mobile,
             "farm_name": body.farm_name.strip(),
             "owner_name": body.owner_name.strip(),
-            "token": token,
             "created_at": iso(now_utc()),
         }
         await db.farms.insert_one(dict(farm))
-        # Seed default products
         for p in DEFAULT_PRODUCTS:
             await db.products.insert_one({
                 "id": str(uuid.uuid4()),
@@ -274,15 +316,45 @@ async def verify_otp(body: VerifyOtpIn):
                 "created_at": iso(now_utc()),
             })
         is_new = True
-    else:
-        # rotate token on re-login
-        token = str(uuid.uuid4())
-        await db.farms.update_one({"id": farm["id"]}, {"$set": {"token": token}})
-        farm["token"] = token
 
     await db.otps.delete_one({"mobile": mobile})
     farm.pop("_id", None)
-    return {"needs_registration": False, "is_new": is_new, "token": token, "farm": farm, "role": "admin"}
+
+    farm_id = farm["id"]
+    access_token = create_access_token(farm_id)
+    refresh_token = await create_refresh_token(farm_id)
+
+    return {
+        "needs_registration": False,
+        "is_new": is_new,
+        "token": access_token,
+        "refresh_token": refresh_token,
+        "farm": farm,
+        "role": "admin",
+    }
+
+
+class RefreshIn(BaseModel):
+    refresh_token: str
+
+@api.post("/auth/refresh")
+async def refresh_access_token(body: RefreshIn):
+    rec = await db.refresh_tokens.find_one({"token": body.refresh_token})
+    if not rec:
+        raise HTTPException(401, "Invalid or expired refresh token")
+    expires_at = rec["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < now_utc():
+        await db.refresh_tokens.delete_one({"token": body.refresh_token})
+        raise HTTPException(401, "Refresh token expired. Please log in again.")
+    farm_id = rec["farm_id"]
+    farm = await db.farms.find_one({"id": farm_id}, {"_id": 0})
+    if not farm:
+        raise HTTPException(401, "Farm not found")
+    new_access_token = create_access_token(farm_id)
+    return {"token": new_access_token}
+
 
 @api.post("/auth/delivery/login")
 async def delivery_login(body: DeliveryBoyLogin):
