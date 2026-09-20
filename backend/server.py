@@ -82,20 +82,22 @@ def month_key(dt: Optional[datetime] = None) -> str:
 
 
 # ---------- JWT helpers ----------
-def create_access_token(farm_id: str) -> str:
+def create_access_token(sub_id: str, role: str = "admin") -> str:
     payload = {
-        "sub": farm_id,
+        "sub": sub_id,
+        "role": role,
         "type": "access",
         "exp": now_utc() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS),
         "iat": now_utc(),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-async def create_refresh_token(farm_id: str) -> str:
+async def create_refresh_token(sub_id: str, role: str = "admin") -> str:
     token = str(uuid.uuid4())
     await db.refresh_tokens.insert_one({
         "token": token,
-        "farm_id": farm_id,
+        "sub_id": sub_id,
+        "role": role,
         "expires_at": now_utc() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
         "created_at": now_utc(),
     })
@@ -226,6 +228,8 @@ async def get_farm(authorization: Optional[str] = Header(None)) -> dict:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         if payload.get("type") != "access":
             raise HTTPException(401, "Invalid token type")
+        if payload.get("role") != "admin":
+            raise HTTPException(403, "Insufficient permissions")
         farm_id = payload.get("sub")
         farm = await db.farms.find_one({"id": farm_id}, {"_id": 0})
         if not farm:
@@ -244,6 +248,23 @@ async def get_delivery_boy(authorization: Optional[str] = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "Missing auth token")
     token = authorization.split(" ", 1)[1].strip()
+
+    # Try JWT first
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "access":
+            raise HTTPException(401, "Invalid token type")
+        if payload.get("role") != "delivery_boy":
+            raise HTTPException(403, "Insufficient permissions")
+        boy_id = payload.get("sub")
+        boy = await db.delivery_boys.find_one({"id": boy_id}, {"_id": 0})
+        if not boy:
+            raise HTTPException(401, "Delivery boy not found")
+        return boy
+    except JWTError:
+        pass
+
+    # Fallback: legacy UUID token
     boy = await db.delivery_boys.find_one({"token": token}, {"_id": 0})
     if not boy:
         raise HTTPException(401, "Invalid or expired token")
@@ -348,11 +369,18 @@ async def refresh_access_token(body: RefreshIn):
     if expires_at < now_utc():
         await db.refresh_tokens.delete_one({"token": body.refresh_token})
         raise HTTPException(401, "Refresh token expired. Please log in again.")
-    farm_id = rec["farm_id"]
-    farm = await db.farms.find_one({"id": farm_id}, {"_id": 0})
-    if not farm:
-        raise HTTPException(401, "Farm not found")
-    new_access_token = create_access_token(farm_id)
+    sub_id = rec.get("sub_id", rec.get("farm_id")) # fallback for old records
+    role = rec.get("role", "admin")
+    
+    if role == "admin":
+        user = await db.farms.find_one({"id": sub_id}, {"_id": 0})
+    else:
+        user = await db.delivery_boys.find_one({"id": sub_id}, {"_id": 0})
+        
+    if not user:
+        raise HTTPException(401, "User not found")
+        
+    new_access_token = create_access_token(sub_id, role)
     return {"token": new_access_token}
 
 
@@ -361,10 +389,17 @@ async def delivery_login(body: DeliveryBoyLogin):
     boy = await db.delivery_boys.find_one({"mobile": body.mobile, "pin": body.pin}, {"_id": 0})
     if not boy:
         raise HTTPException(401, "Invalid mobile or PIN")
-    token = str(uuid.uuid4())
-    await db.delivery_boys.update_one({"id": boy["id"]}, {"$set": {"token": token}})
-    boy["token"] = token
-    return {"role": "delivery_boy", "token": token, "boy": boy}
+        
+    boy_id = boy["id"]
+    access_token = create_access_token(boy_id, "delivery_boy")
+    refresh_token = await create_refresh_token(boy_id, "delivery_boy")
+    
+    return {
+        "role": "delivery_boy",
+        "token": access_token,
+        "refresh_token": refresh_token,
+        "boy": boy
+    }
 
 
 @api.get("/farm/me")

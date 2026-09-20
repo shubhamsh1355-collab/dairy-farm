@@ -142,7 +142,7 @@ export const api = {
       role?: string;
     }>("/auth/verify-otp", { method: "POST", body: payload, auth: false }),
   deliveryLogin: (payload: { mobile: string; pin: string }) =>
-    request<{ token: string; boy: any; role: string }>("/auth/delivery/login", { method: "POST", body: payload, auth: false }),
+    request<{ token: string; refresh_token: string; boy: any; role: string }>("/auth/delivery/login", { method: "POST", body: payload, auth: false }),
   me: () => request<{ farm: any }>("/farm/me"),
   updateSettings: (payload: { upi_id?: string; farm_name?: string }) =>
     request<{ farm: any }>("/farm/settings", { method: "PUT", body: payload }),

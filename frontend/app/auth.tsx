@@ -121,7 +121,7 @@ export default function AuthScreen() {
     try {
       const res = await api.deliveryLogin({ mobile: mobile.trim(), pin });
       if (res.token && res.boy) {
-        await saveSession(res.token, res.boy, "delivery_boy");
+        await saveSession(res.token, res.boy, "delivery_boy", res.refresh_token);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.replace("/delivery");
       }
